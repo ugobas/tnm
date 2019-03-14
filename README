@@ -1,0 +1,212 @@
+Program tnm (torsional network model)
+==========================================
+Author: Ugo Bastolla Centro de Biologia Molecular Severo Ochoa (CSIC-UAM), Spain
+e-mail ubastolla@cbm.csic.es
+Please cite Mendez R, Bastolla U. Phys Rev Lett. 2010 104:228103.
+
+General description
+==========================
+The program tnm computes the normal modes of protein structure <pdb1> in the space of torsion angles and other relevant internal coordinates such as inter-chain rigid body degrees of freedom, and uses them for computing protein dynamics in the harmnic approximation. Normal modes are also printed as Cartesian displacements and as movies in PDB files if specified by the user.
+
+Custom settings: output
+----------------------
+The user can specify the number of printed *normal modes* with the option NMODES=<value> (default is zero). The modes are printed as movies in PDB files if PRINT_PDB=1 (default is 0) printed as snapshots with at least RMSD_STEP=<value> (default 0.4) RMSD from the previous one. 
+The file <>_Modes.dat reports several properties of each normal mode: contribution to thermal fluctuations individual and cumulative, contribution to the analyzed conformation change (if any, see below) computed through rescaled ridge regression individual and cumulative, inverse frequency squared omega^(-2), RMSD produced by the normal mode, collectivity (fraction of degrees of freedom displaced by the mode computed as exponential of the Shannon entropy divided by the number of degrees of freedom) in Cartesian space, torsion space mass-weighted, and torsion space, and maximum deviation produced by the normal mode, which is correlated with the RMSD.
+
+The program outputs in <>_Bfact.dat the experimantal *fluctuations* of each atom (B-factors) and the predicted fluctuations, considering only internal degrees of freedom and also considering rigid body degrees of freedom fitted through rescaled ridge regression. It also outputs the predicted thermal fluctuations of the internal degrees of freedom considered in the model (see above) in the file <>_tors_fluct.dat
+
+The user can specify a *conformational change* by providing the input to a second PDB (PDB2=<path_to_second_pdb>, CH2=<chain>). The sequences of the two proteins are aligned and the structures of the aligned residues are optimally superimposed. The program exits if the resulting RMSD is smaller than RMSD_MIN set by RMSD_MIN=<value> (default 0.5).
+If PRINT_CHANGE=1 is specified the program prints a pdb file with the path of the conformational change generated only through displacements in torsion angles and inter-chain degrees of freedom. 
+Given the Cartesian conformational change for all reference atoms, the program computes the torsional conformational change based on 4 methods: (1) Difference of torsion angles without considering bond angles; (2) Ordinary least square fit; (3) Rescaled ridge regression of type M (maximum penalty); (4) Rescaled ridge regression of type Cv (specific heat). By far the best results are obtained with rescaled ridge regression, while results obtained with (1) and (2) often do not make sense but they are reported for completeness. The Summary file reports the correlation of the projections of the torsional conformation changes on the torsional normal modes, c_alpha, with the normal mode frequencies omega_alpha, r[c^2,1/w^2], and the excess correlations with respect to the null-model expectation based on linear response theory, r[(c*w)^2,1/w^2], with the corresponding significance, Significance(Z), which can be interpreted as evidence that the conformational change is target of natural selection. The number of normal modes that effectively contribute to the conformational change are reported as Recp.Coll(cc) and the mode that contributes most is reported as Most_contr.mode(cc).
+If PRINT_FORCE=1 is specified the program prints as a PDB file the force that is required to generate the torsional conformation change computed with method (4).
+
+If a conformational change is specified, the program can predict the effect of the mutation in the sequence if the number of mutations is equal to NMUT, set by NMUT=<value>. If NMUT=-1 the prediction is performed in any case. The effect of the mutation can be predicted through different models set by MUT_FORCE=0 (prediction based on change of the size of the residue) or MUT_FORCE=1 (prediction based on the change of stability of the residue), manuscript in preparation.
+
+The program can print SIMUL=<value> (default zero) conformations sampled from the TNM ensemble in the <>_simul.pdb file.
+
+The program can be used to compute *dynamical couplings* between all pairs of C-alpha atoms. To this effect ALLOSTERY=1 must be specified. Implemented couplings: (A) deformation coupling (extent by which a perturbation at a residue i modifies the local structure of residue j), computed if PRINT_ALLO_COUPLING=1 and printed in <>_deformation_coupling.dat. (B) Directionality coupling (Boltzmann average of the scalar product of the directions of motions of two residues) computed if PRINT_DIR_COUPLING= 1 and printed in <>_directionality_coupling.dat (C) Coordination coupling (1- 0.5*fluctuation of the interatomic distance) computed if PRINT_COORD_COUPLING=1 and printed in <>_coordination_coupling.dat. If ALL_PAIRS=1, couplings are printed for all pairs, otherwise only values that exceed the mean coupling plus SIGMA times the standard deviation are printed. The default value is SIGMA=1.0. In the coupling file, each residue is labeled by an integer number. The correspondence between labels and residue number, residue type and chain label is reported in the file <>_names.dat.
+
+For each coupling, the program can print the corresponding *profile* (one value for each residue) set by PROF_TYPE=<value>, allowed: A (average, obtained by averaging all couplings of the residue), P (principal eigenvector), C (effective connectivity). The profiles are printed in the files <>_profiles.dat
+
+It is possible to specify a list of *functional sites* in the file specified by SITES=<file>. If no file is specified, the binding sites reported in teh PDB file are used, if present. For each binding site, the average couplings between the residues that belong to the site are reported, as well as their P-value (fraction of 1000 randomly generated sites with coupling larger than the functional site), in the file <>_binding_sites.dat, and the average couplings between residues of two different sites and the corresponding P-values are reported in the file <>_pairs_sites.dat
+
+
+Custom settings: model
+----------------------
+The following settings can be modified by the user by editing the configuration file. The best results are obtained with the default settings.
+
+The analyzed structure is set by providing the path of the PDB file as PDB1=<local_path_to_pdb>. The program considers either the first chain in the PDB file (default), a specified chain (e.g. CH1=B), a set of chains (e.g. CH1=ABCDE), or all chains in the PDB (CH1=ALL).
+
+The user can select the *degrees of freedom* that are allowed to move. Besides rigid body degrees of freedom between different chains and between parts of the same chain separated by a disordered loop, these are main chain torsion angles phi and psi (default), only phi (PSI=0), also main-chain omega angle (OMEGA=1), also side-chain torsion angles (SIDECHAIN=1). Side chain degrees of freedom are considered only if they are constrained by at least MIN_INT contacts (default 1). Counter-intuitively, the fewer the degrees of freedom (PSI=0) the better the results.
+
+The user can select the *reference atoms* that are used to compute the kinetic energy and the Eckart conditions that eliminat global rigid body degrees of freedom. The default is all heavy atoms (REF=ALL), allowed choices are extended backbone atoms (REF=EB i.e. N-CA-C-O-CB), strict backbone atoms (REF=BB i.e. N-CA-C), only beta-carbons (REF=CB C-alpha for Glycine) or only alpha-carbons (REF=CA). The best results are obtained with the default (all atoms).
+
+The *potential energy* is computed based on native contacts computed with all atoms, considering only the pair of atoms at minimum distance for a given pair of residue (CONT_TYPE=MIN, default), based on all atoms, with more than one pair of interacting atoms for each pair of residues (CONT_TYPE=ALL), based on C-beta atoms (CONT_TYPE=CB, C-alpha is used for Glycine), based on C-alpha atoms (CONT_TYPE=CA), based on screened interactions (CONT_TYPE=DIR), based on a model that scores differently the hydrogen bonds (CONT_TYPE=HB) or based on the elastic network model by Hinsen (CONT_TYPE=HNM). The best results are obtained with the MIN scheme. The threshold for the contact cut-off can be set through the CONT_THR=<value> record, default 4.5. The force constant is modelled as a decreasing power of the distance of the interacting atoms in the PDB structure with exponent set by EXP_HESSIAN=<value> (default is 6, which gives the best results).
+
+The elastic constants of the flexible degrees of freedom can be set by K_PHI=, K_PSI=, K_OMEGA=, K_CHI= for torsion angles and K_BL=, K_BA= for bond lengths and bond angles.
+
+The amplitude of the normal modes at the temperature of the computation are set by the rescaled ridge regression fit of the experimental B-factors with the atomic fluctuations predicted by the model if FIT_B=1 is specified, otherwise they are internally computed with default values of the force constant if FIT_B=0 or if B-factors are absent. Better results are obtained with FIT_B=1.
+
+To avoid vanishing eigenvalues due to numerical errors, normal modes are discarded if their eigenvalue is omega^2 < E_MIN <omega^2> (the mean value of the eigenvalue for all modes). Default is E_MIN=0.0000001. Modes with low collectivity that move fewer than COLL_THR Cartesian degrees of freedom are discarded (default is COLL_THR=80 roughly corresponding to 4 residues when REF=ALL atoms. This parameter has not been really optimized).
+
+Compilation
+===========
+To compile, save into your chosen installation directory and run
+>unzip tnm.zip
+>make
+(you may want to change the compilation options in the Makefile)
+>cp tnm /bin/
+(copy to a binary files directory contained in your PATH, as specified for instance in the ~/.tcshrc file)
+
+RUNNING FROM COMMAND LINE
+===========================
+Fast way to run the program, but not all capabilities are enabled.
+It is reccomended to run the program with configuration file (see below)
+
+Use the program to compute normal modes of one or more chains:
+
+>tnm -p1 <pdb1> -c1 <chain1> -modes <nmodes>
+
+The program computes tnm modes of chain <chain1> (default: first chain)
+of pdb file and prints the <nmodes> (default: 0) lowest modes in multi-pdb
+files and as torsional and cartesian components.
+If -c1 ALL is used, all chains are used to compute normal modes.
+
+Use the program to project the conformation change from <pdb1> to <pdb2> onto
+the normal modes of <pdb1>:
+
+>tnm -p1 <pdb1> -c1 <ch1> -p2 <pdb2> -c2 <ch2> -modes <nmodes>
+
+The program outputs a summary of the projection in a file called
+Summary_<....>.dat, mode by mode projections in <...>.dat, and the
+<nmodes> lowest normal modes.
+
+RUNNING WITH CONFIGURATION FILE (RECCOMENDED)
+=============================================
+
+>tnm Input_TNM.in
+A template configuration file Input_TNM.in is provided in the tnm.zip archive
+
+FORMAT of the configuration file Input_TNM.in:
+==============================================
+# Lines beginning with # are interpreted as comments.
+#
+# 1) Input proteins
+#==============================
+#The input pdb must be specified in the records "PDB1" and "CH1" 
+#Chain A: CH1= A Default: First chain in PDB file CH1= ALL : all chains, e.g.:
+PDB1= <file.pdb>
+CH1=  ALL  (A, ABCDE, ALL)
+#
+#If the conformation change between two proteins is required, it must be
+#specified with the records "PDB2" and "CH2", e.g.
+PDB2= /data/ortizg/databases/pdb/1ank.pdb
+CH2= A
+#
+# 2) Model parameters (recommended: use the default)
+#===================================================
+# Degrees of freedom:
+DOF=  TORS             ! Torsional degrees of freedom (alternative: CART)
+PSI=0                  ! Use psi angle as degree of freedom?
+OMEGA=0                ! Use mainchain omega as degree of freedom? (default:NO)
+SIDECHAIN=0            ! Use sidechain degrees of freedom?
+MIN_INT=1              ! dofs with fewer than MIN_INT interactions are frozen
+# Kinetic energy:
+REF= ALL
+# Atoms used for kinetic energy. Allowed: ALL EB BB CB CA
+# Potential energy
+CONT_TYPE= MIN         ! Contact definition (allowed: MIN DIR SCB CB CA HB HNM) 
+CONT_THR= 4.5          ! Threshold for contacts
+K_PHI=0.1              ! Elastic constant for angle phi
+K_PSI=0.1              ! Elastic constant for angle psi
+K_OMEGA=1              ! Elastic constant for angle omega (if present)
+K_CHI=0.5              ! Elastic constant for angle chi (if present)
+K_BL=1.0               ! Elastic constant for bond length
+K_BA=0.5               ! Elastic constant for bond angle
+K_TOR=0.1              ! Elastic constant for torsion angle
+EXP_HESSIAN= 6         ! Force constant: k~r^(-e)
+FIT_B= 1     	       ! Fit B factors if present? (default YES)
+# Normal modes
+E_MIN=0.0000001	       ! Threshold on eigenvalues w^2/<w^2>
+COLL_THR=80            ! Select modes with number of moved atoms > COLL_THR
+#
+# 3) Output
+#===================================================
+#
+# 3A) General
+#----------------------
+PRINT_SUMM= 1		! Print summary of results (1=TRUE)
+PRINT_CONT_MAT=0	! Print contact matrix? (1=TRUE)
+DEBUG=0			! Print debugging information (messy)
+# Perturbed structures: 
+D_REP=2.5               ! Maximum distance for computing repulsion energy
+E_THR=5.0               ! Maximum allowed energy of generated structures
+RMSD_STEP=0.5           ! Minimum Rmsd between structures in a movie
+#
+# 3B) Normal modes
+#----------------------
+NMODES=10		! Number of modes to print (default zero)
+PRINT_PDB= 0		! Print modes as PDB files? (1=TRUE)
+AMPLITUDE=1.0           ! Maximum amplitude applied to normal modes
+# (applied if PRINT_PDB=1 until the repulsion energy reaches E_THR)
+#
+# 3C) Simulated structures of the thermal ensemble
+#-----------------------------------------------
+SIMUL=0			! Number of simulated structures
+#
+# 3D) Conformational change
+#---------------------------
+PRINT_CHANGE=1       ! Print movie of conformational change? (slow)
+PRINT_FORCE= 0       ! Print the force that would generate the observed
+#                      conformational change
+#
+# 3E) DYNAMICAL COUPLINGS
+# ====================================
+ALLOSTERY=0		! Compute dynamical couplings?
+PROF_TYPE=C		! A=average coupling P=Principal eigenvector of coup.
+#			! C= effective connectivity of coup. 
+ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
+SIGMA= 1.5 		! if(ALL_PAIRS==0), couplings are printed if
+#      			!                    c_ij >/< <c>+/- SIGMA*st.dev.
+PRINT_DEF_COUPLING=0	! Print deformation couplings
+# Deformation coupling A_ij is the deformations produced on site j by a
+# unitary force applied in j in the direction that maximizes the deformation.
+# Output file: <>_deformation_coupling.dat
+PRINT_DIR_COUPLING= 0	! Print directionality couplings
+# Directionality coupling D_ij is the Boltzmann average of the scalar
+# product of the direction of motion of the residues i and j. If it is
+# positive the two residues tend to move in the same direction.
+# Output file: <>_directionality_coupling.dat
+PRINT_COORD_COUPLING=1			  ! Print coordination couplings
+# Coordination coupling C_ij is the Boltzmann average of the RMS
+# fluctuations of the distance d_ij with respect to the equilibrium value.
+# If it is small the two residues maintain an almost fixed distance during
+# their dynamics.
+# Output file: <>_coordination_coupling.dat
+PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
+# Note that the coordination coupling is Coord_ij= 1.-0.5*sqrt(Var(Dij))
+SITES=<file_site>	! File where functional sites are read.
+# If not specified, read from the SITE record in the PDB file.
+# The program computes the mean and the significance of the coupling of pairs
+# of residues within (<>_binding_sites.dat) and between (<>_pairs_sites.dat)
+# functional sites
+# format of <file_site>: SITE(num) AA(3 letters) CHAIN RESNUM(as in PDB)
+# Example (delete the # symbol from the following lines):
+#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323                 
+#1	ASP	A	127
+#1	ARG	A	162
+#1	MET	A	169
+#1	GLY	A	170
+#1	ARG	A	252
+#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE MG A 327                  
+#3	GLY	A	185
+#3	GLU	A	187
+#
+#INTERACTION TYPES (CONT_TYPE)
+MIN: At least 2 heavy atoms within threshold
+#SCR: Screened interactions (screening of the atom k that minimizes s=max(d_ik,d_jk) is considered, it generates a weight w=exp((s-d_ij)/t)/[1+exp((s-d_ij)/t)] where t is the tolerance parameter
+#SHA: Shadow interaction (same idea as screened, 3 different implementations S_TYPE=0,1,2)
+#SCB: Same as MIN, but the TNM contraints the distance between the two CB of the itneracting residues.
+#CA, CB: Only distances between CA, CB are checked
+#HB: Same as MIN, but interactions that are due to hydrogen bonds are weighted more
+#HNM: Hinsen Network Model, like ANM with CA interactions but interactions between neighboring residues are weighted more.
