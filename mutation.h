@@ -1,0 +1,15 @@
+int Mutation(float *mut_Tors, int N_axes,
+	     float *mut_Cart, struct Reference Ref_kin, 
+	     int Nmut, char *AAwt, int *Posmut, char *AAmut, //int Force_stab,
+	     struct Normal_Mode NM, atom *atoms, int natoms,
+	     struct interaction *Int_list, int N_int,
+	     struct residue *seq,
+	     float *B_pred,
+	     float *Confchange_Cart, struct Reference Ref_cc,
+	     float *Confchange_Tors, float *Tors_fluct,
+	     char *nameout1, int anharm, char *Mut_para);
+void Predict_mutations(struct Normal_Mode NM, atom *atoms, int natoms,
+		       int N_axes, struct Reference Ref_kin, 
+		       struct interaction *Int_list, int N_int,
+		       struct residue *seq, int Nres,
+		       char *nameout1, char *Mut_para);
