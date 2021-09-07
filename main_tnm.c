@@ -90,7 +90,6 @@ char SITES[100]="";
 #include "dof_tnm.h"
 #include "kinetic_tnm.h"
 #include "interactions_tnm.h"
-#include "screened_interactions.h"
 #include "vector.h"
 #include "buildup.h"
 #include "allocate.h"
