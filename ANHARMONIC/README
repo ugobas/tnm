@@ -1,2 +1,12 @@
-This directory contains scripts and data relative to the paper "Why are large conformational changes well described by harmonic normal modes?" 
-by Y. Dehouck and U. Bastolla (Biophysical Journal, under revision).
+This folder contains scripts and data relative to the paper "Why are large conformational changes well described by harmonic normal modes?" 
+by Y. Dehouck and U. Bastolla (Biophysical Journal, under revision). It contains the files:
+1) script_confchange.pl is a perl script for running the TNM program onto a set of conformational changes either locally or on a computer cluster,
+for specified choice of degrees of freedom (PHI, PHIPSI, OMEGA or SIDECHAIN) and torsional regularization.
+2) List.in is a list of initial and final strctures of the conformational change and corresponding chain label (ALL for considering all chains in the PDB file)
+The corresponding pdb files must be stored in the folder PDBPATH
+3) Input_TNM.in is a sample configuration file for the TNM program. The script modifies the pdb file names and the parameters with degrees of freedom,
+contact threshold and torsional regularizations, which are commented in the file and must be uncommented for use without the script.
+4) script_read_confchange.pl is a perl script that reads the TNM results, stored in a different folder for each set of parameters (degrees of freedom and
+torsional regularization), and outputs tables for individual proteins and averaged over all proteins.
+5) Table_confchange.zip is a zip archive with the tables obtained with the above script
+ 
