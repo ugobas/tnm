@@ -1,0 +1,34 @@
+2kho A 4b9q A ! Chaperone DnaK, open-close 4b9q (ATP) 4jne (ATP) 4jn4 (ATP) 5nro (ATP, DnaJ)
+## 1efa A 1lbi A ! LacI bound/unbound/ (dimer)  2p9h AB allosteric
+1efa A 1lbh A ! LacI bound/unbound/ (dimer)  2p9h AB allosteric
+3tt1 A 3tt3 A ! LeuT inward/outward
+1mq4 A 1ol6 A ! Aurora kinase
+1kp8 A 1aon A ! GroEL HSP60 (A-N, 14)
+1svt O 1aon O ! GroES HSP10
+## 3zq0 O 1aon O ! GroES HSP10
+4ake A 1ank A ! Adenilate kinase
+1usg A 1usk A ! Leucine transporter
+1aro P 1cez A ! T7 RNA pol I
+1bpx A 1bpy A ! DNA pol beta
+1n5y A 1rtd A ! HIV-1 RT
+1u09 A 1wne A ! FMDV RNA polymerase
+2nwl A 1xfh A ! Aspartate transporter, outward/inward
+## 2nwl A 3kbc A ! Aspartate transporter, outward/inward
+1vom A 1mma A ! Dictyostelium myosin
+1rq2 A 4kwe A ! FtsZ, MYCTU, 2
+1i7q A 1i7s A ! Anthranilate Synthase TRPE, 2+2 PYR-BEZ-GLU
+1i7q B 1i7s B ! Anthranilate Synthase TRPG, 2+2 PYR-BEZ-GLU
+1d09 A 1raa A !	Aspartate Transcarbamylase ATCase. 12, 2*3+3*2
+1d09 B 1raa B !	Aspartate Transcarbamylase ATCase. 12, 2*3+3*2
+1o3q A 4r8h A ! CAP, 2 (28 structures)
+1kfl A 5cks A ! DAHP Synthase, 4
+3ju5 A 3ju6 A ! Dimeric Arginine Kinase, 4
+1cd5 A 1fs5 A ! Glucosamine 6-Phosphate Deaminase, 6
+1efk A 1efl A ! NAD-dep Malic Enzyme, 4
+3pfk A 6pfk A ! PhosphoFructoKinase, 4
+1yba A 1psd A ! PhosphoGlycerate DeHydrogenase, 4
+2hnp A 2f71 A ! Prot Tyrosine Phosphatase 1B, 1 (94 structures)
+1xtu A 1xtt A ! uracil phosphoribosyltransferase (5 str.)
+1e5x A 2c2g A ! Threonine Synthase, 2
+1nr7 A 1nqt A ! Bovine Glutamate DeHidrogenase, 6
+2ktq A 3ktq A ! DNA pol I

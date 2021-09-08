@@ -1,0 +1,114 @@
+####   INPUT:
+#PDB1= /data/ubastolla/TNM/CONFCHANGE/PDB/P1P1.pdb
+#CH1= A
+##########################################################
+# Conformation change (optional):
+#PDB2= /data/ubastolla/TNM/CONFCHANGE/PDB/P2P2.pdb
+#CH2= A
+####  Model parameters (reccomended: do not change)
+#======================================================================
+DOF=  TORS  CART      ! Torsional degrees of freedom (alternative: CART)
+REF= ALL EB              ! Reference atoms for kynetic energy
+#PSI=0
+#OMEGA=0                ! Use omega as degree of freedom? (default: NO)
+#SIDECHAIN=0            ! Use sidechain degrees of freedom?
+# This option allows using side chains chi angles as additional degree of
+# freedom, but introduces non collective motions that worsen performances.
+MIN_INT=1              ! dofs with fewer than MIN_INT interactions are frozen
+#K_PHI= 0.20              ! Elastic constant for angle phi
+#K_PSI= 0.20              ! Elastic constant for angle psi
+#K_OMEGA= 0.20              ! Elastic constant for angle omega (if present)
+#K_CHI= 0.20              ! Elastic constant for angle chi (if present)
+K_BL=1.0               ! Elastic constant for bond length
+K_BA=0.5               ! Elastic constant for bond angle
+#K_TOR=0.1              ! Elastic constant for torsion angle
+CONT_TYPE= MIN         ! Interaction model (MIN SCR SHA SCB CB CA HB HNM) 
+#CONT_THR=  4.5         ! Threshold for contacts
+EXP_HESSIAN= 6         ! Force constant: k~r^(-e)
+FIT_B= 1     	       ! Fit B factors if present? (default YES)
+E_MIN=0.00000001	       ! Threshold on eigenvalues w^2/<w^2>
+COLL_THR=10 160 90            ! Select modes with number of moved atoms > COLL_THR
+ANHARMONIC= 1
+###  Analysis of conformation change
+RMSD_MIN=0.3           ! Min. RMSD for analyzing conformation change
+NMUT=-2		       ! Required number of mutations in confchange
+#		       ! NMUT=-1: No requirement
+#RMSD_THR= 0.25	       ! Smallest RMSD of relevant modes
+#SEQID_THR=10	       ! If Seq.Id<THR, align structures with Mammoth
+#
+#
+#### General output
+#==================================================================
+NMODES=0		! Number of modes to print
+PRINT_PDB= 0		! Print modes as PDB files? (1=TRUE)
+PRINT_CONT_MAT=0	! Print contact matrix? (1=TRUE)
+PRINT_SUMM= 1		! Print summary of results (1=TRUE)
+PRINT_CHANGE= 0 	! Print path of conformation change? (1=TRUE)
+PRINT_FORCE= 0		! Print the force that would generate the observed
+NSTEPS=900
+STEP_MIN=0.001
+STEP_MAX=0.6
+ANGLE=0.05
+#	     		! conformation change  (1=TRUE)
+#FILE_FORCE= 		! Input file with force, the program computes the
+#			! resulting deformation (to be implemented)
+DEBUG=0			! Print debugging information
+#
+#### Dynamical couplings
+#==================================================================
+ALLOSTERY=0		! Compute dynamical couplings 
+PROF_TYPE=C		! A=average P=Principal eigenvector
+#			! C= effective connectivity 
+ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
+SIGMA= 1.0 		! if(ALL_PAIRS==0), couplings are printed if
+#      			!                    c_ij><c>+SIGMA*st.dev.
+PRINT_ALLO_COUPLING=1	! Print deformation couplings
+# Deformation coupling Def_ij is the deformations produced on site j by a
+# unitary force applied in j in the direction that maximizes the deformation.
+# The coupling is output only when it is > SIGMA standard deviations above
+# the mean value.
+# Output file: <>_deformation_coupling.dat
+#
+PRINT_DIR_COUPLING= 1	! Print directionality couplings
+# Directionality coupling D_ij is the Boltzmann average of the scalar
+# product of the direction of motion of the residues i and j. If it is
+# positive the two residues tend to move in the same direction.
+# The coupling is output only when it is > SIGMA standard deviations above
+# the mean value.
+# Output file: <>_directionality_coupling.dat and
+#
+PRINT_COORD_COUPLING=1			  ! Print coordination couplings
+# Coordination coupling C_ij is the exponential of minus the Boltzmann average
+# of the RMS fluctuations of the distance d_ij with respect to the equilibrium
+# value. If it is small the two residues maintain an almost fixed distance
+# during their dynamics.
+# The coupling is output only when it is > SIGMA standard deviations above
+# the mean value.
+# Output file: <>_coordination_coupling.dat
+#
+# In this case, the program also outputs the proximity coupling
+# P_ij=exp(-d0_ij/4A) It is 1 for neighboring residues, 0 if they are far.
+# Output file: <>_proximity_coupling.dat
+#
+PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
+# Note that the variance of Dij is the square of the coordination coupling.
+#
+PRINT_ALLO_MATRIX= 0	! Print allosteric matrix (huge!!)
+# It is output in the format of a N*N matrix for all pairs of sites
+#
+SITES=1ank_sites.in 	! File where an active site is read.
+# If not specified, read from the SITE record in the PDB file.
+# format: SITE AA (3 letter) CHAIN RESNUM (PDB)
+# The mean coupling of pairs of residues in the active site is computed.
+#### Generation of alternative structures
+#==================================================================
+SIMUL= 0 20			  ! Number of simulated structures
+RMSD_STEP=0.4             ! Minimum Rmsd between structures printed as PDB
+AMPLITUDE=10.0             ! Amplitude applied to normal modes
+MOVE_ALL_MODES= 0         ! Generate structures moving all modes
+#			  ! or one after the other?
+# MOVE_ONE_MODE=  0       ! Generate structures moving one mode at a time?
+RESET=0                   ! Reset native structure after each build-up ?
+SELECT_ENE=0              ! Build structures based on anharnomicity?
+E_THR=5.0                 ! Maximum allowed energy of generated structures
+D_REP=2.5                 ! Maximum distance for computing repulsion energy
