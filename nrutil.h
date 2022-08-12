@@ -8,7 +8,7 @@
 #ifndef _NR_UTILS_H_
 #define _NR_UTILS_H_
 
-float sqrarg;
+extern float sqrarg;
 #define SQR(a) ((sqrarg=(a)) == 0.0 ? 0.0 : sqrarg*sqrarg)
 
 //~ static double dsqrarg;

@@ -1,3 +1,6 @@
+#ifndef __INI_NMA
+#define __INI_NMA 
+
 #include <stdio.h>
 extern int DEBUG,ALL_AXES;
 extern char SEL[10];
@@ -7,6 +10,7 @@ extern char chain;
 // float dist_CA[L_MAX]; // Squared distance from the center of mass
 extern char file_aniso[200];
 extern int INT_MAX;
+extern char REF_CC[5]; // Reference atoms for computing conformation change
 
 /******************** Shared variables ****************************/
 #define AMIN_CODE "AEQDNLGKSVRTPIMFYCWHX"
@@ -102,12 +106,12 @@ int Convert_cart2torsion1(float *Tors_dev, float *Masswtd_Tors_dev,
 void Compute_MW(float *MW_Tors, float *Tors, struct Jacobian *J);
 float Tors_fraction(struct Tors *Diff, float *mass);
 float Convert_cart2torsion_old(float *Tors_dev, float *Masswtd_Tors_dev,
-			       float *Cart_dev, int N_axes, int N_cart,
+			       float *Cart_dev, int N_axes, int N_Cart,
 			       double **T_sqrt, double **T_sqrt_inv,
 			       double **Jacobian_ar, float *mass);
 void Rescale_eigenvector(float *eigen_vector, float *Masswtd_evector,
 			 int N, double **T_sqrt);
-float Compute_Max_dev(float *Cart_mode, float omega2, int N_cart,
+float Compute_Max_dev(float *Cart_mode, float omega2, int N_Cart,
 		      float *inv_sq_mass);
 int Compute_Bfact_TNM(float *B_CA, float *eigen_B, float *eigen_value,
 		      float **Cart_mode, int N, int N_CA, float mass);
@@ -167,7 +171,7 @@ int Kinetic_sqrt(struct Jacobian *J, int *N_kin,
 //int Kinetic_sqrt(double **T_sqrt, double ***T_sqrt_inv, int *N_kin,
 //		 int N, int CONTROL, float E_MIN);
 
-void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_cart);
+void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_Cart);
 void Empty_Jacobian(struct Jacobian J);
 
 
@@ -184,7 +188,7 @@ float Mass_atom(char *atom_name);
 
 void gaussj0(float **a, int n,float **b, int m);
 // Tests
-void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
+void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_Cart,
 		   float **Tors_mode_ANM, float **Tors_mode_TNM, int N_tors,
 		   float *mass_coord, char *prot_name, char *inter);
 int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
@@ -244,10 +248,11 @@ void Torsional_force(struct Tors Force, struct Tors *Diff,
 		     atom *atoms, int natoms);
 
 void Cartesian_force(float *Cart_force, float *atom_diff,
-		     double **Hessian,int N_cart);
+		     double **Hessian,int N_Cart);
 
 //double Mean_Cart_coll; // Mean collectivity of normal modes
 //double Coll_thr_cc;    // Minimal collectivity for conformation change
-char REF_CC[5]; // Reference atoms for computing conformation change
 void Tors_outliers(int *outlier_tors, int naxe, int *outlier, int Na,
 		   struct axe *axe, struct chain *chains, int Nchain);
+
+#endif

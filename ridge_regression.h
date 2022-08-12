@@ -1,3 +1,6 @@
+#ifndef RIDGE_REGRESSION
+#define RIDGE_REGRESSION
+
 struct ridge_fit{
   float *A;      // Fitted parameters
   float nu;      // Scale of the fit
@@ -19,3 +22,4 @@ struct ridge_fit{
 float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
 		       float *D_out, char *nameout, float **X, float *Y,
 		       int N, int Npar, char TYPE);
+#endif

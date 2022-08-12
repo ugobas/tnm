@@ -28,13 +28,14 @@ float RMSD_TOL=0.20; // Tolerance RMSD for confchange
 #include "choldc.h"
 #include "allocate.h"
 #include "optimization.h"
+#include "externals.h"
 
 float Energy_clashes(float *r, int N);
 int Metropolis(float Ene_tmp, float Ene, float T);
 void Extract_dphi(float *d_phi, float **Tors_mode, float *sigma,
 		  int N_modes, int N_axes, float factor, long *idum);
 void Extract_dx(float *dx, float **Cart_mode, float *sigma,
-		  int N_modes, int N_cart, float factor, long *idum);
+		  int N_modes, int N_Cart, float factor, long *idum);
 unsigned long randomgenerator(void);
 void Copy_atoms_bonds(atom *atoms, struct bond *bonds, int natoms);
 int Decide_direction(struct bond *bonds, float *d_phi, float *atom_str,
@@ -98,7 +99,7 @@ int Write_RMSD(float *reduce_step, float *RMSD_opt, float *RMSD_kf,
 void Copy_ali(struct ali_atoms *ali_a, struct Reference Ref);
 
 int Tors_step(struct Tors *Diff, double **T_Lambda, float **Jacobian_ar,
-	      float *mass_coord, int naxes, int N_cart);
+	      float *mass_coord, int naxes, int N_Cart);
 
 /*static void Initialize(int Ndir, struct axe *axes, int naxes, int N_modes,
 		       atom *atoms, int natoms,
@@ -118,7 +119,7 @@ int Ini_ch=1;
 int INI_MOVE=0;
 int Ini_dthr=0;
 
-long idum; 
+static long idum; 
 int PRINT_ENE=1;
 int INIRAN;
 //float RANFACTOR;
@@ -265,19 +266,19 @@ void Extract_dphi(float *d_phi, float **Tors_mode, float *sigma,
 }
 
 void Extract_dx(float *dx, float **Cart_mode, float *sigma,
-		int N_modes, int N_cart, float factor, long *idum)
+		int N_modes, int N_Cart, float factor, long *idum)
 {
   float gasdev(long *idum);
   int i, k; float z, coeff;
 
-  for(i=0; i<N_cart; i++)dx[i]=0;
+  for(i=0; i<N_Cart; i++)dx[i]=0;
   for(k=0; k<N_modes; k++){
     z=gasdev(idum);
     coeff = z*sigma[k];
     float *x=dx, *mode=Cart_mode[k];
-    for(i=0; i<N_cart; i++){*x += coeff*(*mode); x++; mode++;}
+    for(i=0; i<N_Cart; i++){*x += coeff*(*mode); x++; mode++;}
   }
-  for(i=0; i<N_cart; i++)dx[i]*=factor;
+  for(i=0; i<N_Cart; i++)dx[i]*=factor;
 }
 
 unsigned long randomgenerator(void){
@@ -501,7 +502,8 @@ int Simulate_ensemble(int N_struct, float factor, char *name,
       // Change the structure with each relevant normal mode
       if(sigma[k]<sigma_thr)break;
       float c = gasdev(&idum)*factor*sigma[k], *mode=NM.Tors[k];
-      if(c<c_thr)continue; nmode++;
+      if(c<c_thr)continue;
+      nmode++;
       for(i=0; i<naxes; i++){d_phi[i]=c*mode[i]; delta_phi[i]=d_phi[i];}
       Copy_bonds(bonds2, bonds, natoms);
       Build_up(bonds2, natoms, d_phi, naxes);
@@ -560,7 +562,7 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
     printf("WARNING, cannot simulate Cartesian ensemble\n"); return;
   }
   idum=IDUM;
-  int i, k, n3=3*natoms, N_cart=Ref.N_cart, N_ref=Ref.N_ref;
+  int i, k, n3=3*natoms, N_Cart=Ref.N_Cart, N_ref=Ref.N_ref;
 
   atom atoms_sim[natoms]; float mass[natoms];
   for(i=0; i<natoms; i++){
@@ -569,7 +571,7 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
   }
   float coord_all_1[n3], coord_all[n3];
   Write_all_coord_atom(coord_all_1, atoms, natoms);
-  float coord_ref_1[N_cart]; // coord_ref[N_cart];
+  float coord_ref_1[N_Cart]; // coord_ref[N_Cart];
   Write_ref_coord_atom(coord_ref_1, N_ref, atoms, Ref.atom_num);
 
   // Open files
@@ -586,7 +588,7 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
 
   // Initialization for Examine_confchange
   if(Ini_ch){
-    Allocate_tors(&Diff_s, naxes, N_cart, NM.N);
+    Allocate_tors(&Diff_s, naxes, N_Cart, NM.N);
     ali_sim.alignres=malloc(nres*sizeof(int));
     Ini_ch=0;
   }
@@ -596,7 +598,7 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
   sprintf(summary3, "Summary_%s_ensemble.dat", nameout);
 
   struct ali_atoms ali_a; Copy_ali(&ali_a, Ref);
-  float dx[N_cart], sigma[NM.N];
+  float dx[N_Cart], sigma[NM.N];
   for(k=0; k<NM.N; k++){
     if(sigma2[k]>0){sigma[k]=sqrt(sigma2[k]);}
     else{sigma[k]=0;}
@@ -605,8 +607,8 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
   Print_PDB(file_pdb, atoms, natoms, coord_all_1, seq, 0, 0.00);
   fprintf(file_out, "%d %.3f\n", 0, 0.0);
   for(k=1; k<=N_struct; k++){
-    Extract_dx(dx, NM.Cart, sigma, NM.N, N_cart, factor, &idum);
-    for(i=0; i<N_cart; i++){
+    Extract_dx(dx, NM.Cart, sigma, NM.N, N_Cart, factor, &idum);
+    for(i=0; i<N_Cart; i++){
       coord_all[i]=coord_ref_1[i]+dx[i];
     }
     float rmsd=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms);
@@ -661,20 +663,20 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
   struct Reference Ref1, Ref2;
   int N_ref=Set_reference(&Ref1, 0, SEL, atoms1, 0, natoms1);
   printf("Change reference atoms to %s n=%d\n",SEL, Ref1.N_ref);
-  int N_cart=3*N_ref; Ref1.N_cart=N_cart;
+  int N_Cart=3*N_ref; Ref1.N_Cart=N_Cart;
   int first_kin[naxes], last_kin[naxes];
   Change_kin(first_kin, last_kin, axes, naxes, natoms1, Ref1);
-  struct Jacobian J; Allocate_Jacobian(&J, naxes, Ref1.N_cart);
+  struct Jacobian J; Allocate_Jacobian(&J, naxes, Ref1.N_Cart);
   */
   //int N_ref=Ref1.N_ref;
-  int N_ali=ali_a.N_ref, N_cart=3*N_ali;
+  int N_ali=ali_a.N_ref, N_Cart=3*N_ali;
   double Mass_tot=0; for(i=0; i<Ref1.N_ref; i++)Mass_tot+=Ref1.mass_atom[i];
 
-  float coord_ref_1[N_cart], coord_ref_2[N_cart];
+  float coord_ref_1[N_Cart], coord_ref_2[N_Cart];
   Write_ref_coord_atom(coord_ref_1, N_ali, atoms1, ali_a.ali1);
   Write_ref_coord_atom(coord_ref_2, N_ali, atoms2, ali_a.ali2);
-  float coord1[N_cart], coord2[N_cart], coord_pdb[N_cart]; //coord_kin[N_cart]; 
-  for(i=0; i<N_cart; i++){
+  float coord1[N_Cart], coord2[N_Cart], coord_pdb[N_Cart]; //coord_kin[N_Cart]; 
+  for(i=0; i<N_Cart; i++){
     coord1[i]=coord_ref_1[i]; coord2[i]=coord1[i];
     coord_pdb[i]=coord1[i]; //coord_kin[i]=coord1[i];
   }
@@ -736,19 +738,19 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
     if((rmsd>RMSD_TOL)){
       printf("Computing kinetic energy\n");
       // Kinetic energy must be computed with new atoms!!!!
-      for(i=0;i<N_cart;i++)coord_kin[i]=coord_old[i];
+      for(i=0;i<N_Cart;i++)coord_kin[i]=coord_old[i];
       atom atoms_t[natoms1]; Copy_atoms_bonds(atoms_t, bonds, natoms1);
       Compute_kinetic(J, axes, naxes, atoms_t, natoms1, Ref1, 0);
       }*/
 
     // Difference of coordinates
-    float Diff_Cart[N_cart];
-    for(i=0;i<N_cart;i++)Diff_Cart[i]=coord_ref_2[i]-coord_old[i];
+    float Diff_Cart[N_Cart];
+    for(i=0;i<N_Cart;i++)Diff_Cart[i]=coord_ref_2[i]-coord_old[i];
     float tors_coeff[naxes];
     for(i=0; i<naxes; i++){
 	tors_coeff[i]=
 	  Scalar_product_weighted(Diff_Cart, J->Jacobian_ar[i],
-				  Ref1.mass_coord, N_cart);
+				  Ref1.mass_coord, N_Cart);
       }
 
     // Compute angles
@@ -782,7 +784,7 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
       float f=A_MAX/max;
       printf("WARNING, too large angle= %.2f ", max);
       printf("Reducing d_phi by a factor %.2g\n", f);
-      for(i=0; i<naxes; i++)diff_step[i]*=f; rstep/=f;
+      rstep/=f; for(i=0; i<naxes; i++)diff_step[i]*=f;
     }
     if(rstep<STEP_MIN){exit=1; goto print;}
 
@@ -823,7 +825,7 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
       rmsd=rmsd_mclachlan_f(coord_pdb, coord_new, mass_ref, N_ali);
       if((rmsd > PDB_STEP)|| exit){
 	k_pdb++;
-	for(i=0; i<N_cart; i++)coord_pdb[i]=coord_new[i];
+	for(i=0; i<N_Cart; i++)coord_pdb[i]=coord_new[i];
 	RMSD_ki=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms1);
 	Print_PDB(file_pdb,atoms1,natoms1,coord_all,seq,k_pdb,RMSD_ki);
       }
@@ -907,25 +909,25 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
   struct Reference Ref1, Ref2;
   int N_ref=Set_reference(&Ref1, 0, SEL, atoms1, 0, natoms1);
   printf("Change reference atoms to %s n=%d\n",SEL, Ref1.N_ref);
-  int N_cart=3*N_ref; Ref1.N_cart=N_cart;
+  int N_Cart=3*N_ref; Ref1.N_Cart=N_Cart;
   int first_kin[naxes], last_kin[naxes];
   Change_kin(first_kin, last_kin, axes, naxes, natoms1, Ref1);
-  struct Jacobian J; Allocate_Jacobian(&J, naxes, Ref1.N_cart);
+  struct Jacobian J; Allocate_Jacobian(&J, naxes, Ref1.N_Cart);
   */
   //int N_ref=Ref1.N_ref;
-  int N_ali=ali_a.N_ref, N_cart=3*N_ali;
+  int N_ali=ali_a.N_ref, N_Cart=3*N_ali;
 
-  float coord_ref_1[N_cart], coord_ref_2[N_cart];
+  float coord_ref_1[N_Cart], coord_ref_2[N_Cart];
   Write_ref_coord_atom(coord_ref_1, N_ali, atoms1, ali_a.ali1);
   Write_ref_coord_atom(coord_ref_2, N_ali, atoms2, ali_a.ali2);
-  float coord1[N_cart], coord2[N_cart], coord_pdb[N_cart];//coord_kin[N_cart];
-  for(i=0; i<N_cart; i++){
+  float coord1[N_Cart], coord2[N_Cart], coord_pdb[N_Cart];//coord_kin[N_Cart];
+  for(i=0; i<N_Cart; i++){
     coord1[i]=coord_ref_1[i]; coord2[i]=coord1[i];
     coord_pdb[i]=coord1[i]; //coord_kin[i]=coord1[i];
   }
 
   struct Tors Diff; 
-  Allocate_tors(&Diff, naxes, N_cart, naxes); //N_modes
+  Allocate_tors(&Diff, naxes, N_Cart, naxes); //N_modes
 
   float *coord_new=coord1, *coord_old=coord2, *mass_ref=Ref1.mass_atom;
   float coord_all[3*natoms1]; Put_coord(coord_all, bonds_ini, natoms1);
@@ -977,12 +979,12 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
       if((iter==0)){//||(rmsd>RMSD_TOL)){
 	printf("Computing kinetic energy\n");
 	// Kinetic energy must be computed with new atoms!!!!
-	//for(i=0;i<N_cart;i++)coord_kin[i]=coord_old[i];
+	//for(i=0;i<N_Cart;i++)coord_kin[i]=coord_old[i];
 	atom atoms_t[natoms1]; Copy_atoms_bonds(atoms_t, bonds, natoms1);
 	Compute_kinetic(J, axes, naxes, atoms_t, natoms1, Ref1, 0);
 	l_Lambda=1;
       }
-      for(i=0;i<N_cart;i++)Diff.Cart[i]=coord_ref_2[i]-coord_old[i];
+      for(i=0;i<N_Cart;i++)Diff.Cart[i]=coord_ref_2[i]-coord_old[i];
       if(iter==0){
 	if(Convert_cart2torsion_fit(&Diff, Ref1, J, nameout, 'C', &Lambda)<0){
 	  printf("WARNING, ridge regression failed\n");
@@ -991,9 +993,9 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
       }else{
 	if(l_Lambda){
 	  printf("Computing T+Lambda, Lambda= %.3f\n", Lambda);
-	  for(i=0;i<naxes; i++)J->T[i][i]*=(1+Lambda); l_Lambda=0;
+	  l_Lambda=0; for(i=0;i<naxes; i++)J->T[i][i]*=(1+Lambda);
 	}
-	if(Tors_step(&Diff,J->T,J->Jacobian_ar,Ref1.mass_coord,naxes,N_cart)){
+	if(Tors_step(&Diff,J->T,J->Jacobian_ar,Ref1.mass_coord,naxes,N_Cart)){
 	  printf("WARNING, fast regression failed\n");
 	  accept=0; k_fail++; fit_fail++; regression=0; continue;
 	}	
@@ -1102,7 +1104,7 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
       float rmsd=rmsd_mclachlan_f(coord_pdb, coord_new, mass_ref, N_ali);
       if((rmsd > Para_simul.PDB_STEP)|| exit){
 	k_pdb++;
-	for(i=0; i<N_cart; i++)coord_pdb[i]=coord_new[i];
+	for(i=0; i<N_Cart; i++)coord_pdb[i]=coord_new[i];
 	RMSD_ki=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms1);
 	Print_PDB(file_pdb,atoms1,natoms1,coord_all,seq,k_pdb,RMSD_ki);
       }
@@ -1173,16 +1175,17 @@ int Torsional_confchange_1angle(float *diff_tors, int naxes, float angle,
 
   struct bond bonds2[natoms1];
   int N_ref=ali_a.N_ref;
-  float coord_new[ali_a.N_cart];  
+  float coord_new[ali_a.N_Cart];  
   float *mass_ref=ali_a.mass;
   float RMSD_kf, RMSD_step;
   for(int k=0; k<naxes; k++){
     // Change internal coordinate i in positive and negative direction
-    int ran=RandomFloating()*N_to_test;
-    if(ran>=N_to_test)ran=N_to_test-1; int iran=0;
+    int ran=RandomFloating()*N_to_test, iran=0;
+    if(ran>=N_to_test)ran=N_to_test-1;
     for(i=0; i<naxes; i++){
       if(tested[i])continue;
-      if(iran==ran)break; iran++;
+      if(iran==ran)break;
+      iran++;
     }
     if(i==naxes)break;
 
@@ -1218,7 +1221,7 @@ int Torsional_confchange_1angle(float *diff_tors, int naxes, float angle,
 void Torsional_confchange_1angle_old(struct bond *bonds, int natoms1,
 				     int naxes, struct Reference Ref1,
 				     float *coord_ref_1, float *coord_ref_2,
-				     int N_cart, atom *atoms1,FILE *file_rmsd,
+				     int N_Cart, atom *atoms1,FILE *file_rmsd,
 				     struct Para_simul Para_simul)
 {
   printf("Changing %d internal coordinates one by one\n", naxes);
@@ -1228,7 +1231,7 @@ void Torsional_confchange_1angle_old(struct bond *bonds, int natoms1,
   Put_coord(coord_all, bonds, natoms1);
   struct bond bonds2[natoms1];
   int N_ref=Ref1.N_ref;
-  float coord1[N_cart], coord2[N_cart];
+  float coord1[N_Cart], coord2[N_Cart];
   Write_ref_coord(coord1, N_ref, coord_all, Ref1.atom_num);
   Write_ref_coord(coord2, N_ref, coord_all, Ref1.atom_num);
   float *coord_new=coord1, *coord_old=coord2;
@@ -1353,8 +1356,8 @@ void Simulate_confchange(int N_frames, float *tors_dir, float *d_Cart,
 {
   int i, Ini_ch=1, n3=3*natoms;
   float coord_all[n3], coord_opt[n3];
-  float coord_ref[Ref.N_cart], coord_ref2[Ref.N_cart];
-  for(i=0; i<Ref.N_cart; i++)coord_ref2[i]=coord_1[i];
+  float coord_ref[Ref.N_Cart], coord_ref2[Ref.N_Cart];
+  for(i=0; i<Ref.N_Cart; i++)coord_ref2[i]=coord_1[i];
 
   // Compute factor for simulations
   double factor=1.00;
@@ -1449,7 +1452,7 @@ int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
   float *sigma=NULL;
   if(type=='R'){
     if(Ini_ch){
-      Allocate_tors(&Diff_s, naxes, NM.N_cart, NM.N);
+      Allocate_tors(&Diff_s, naxes, NM.N_Cart, NM.N);
       ali_sim.alignres=malloc(nres*sizeof(int));
       Ini_ch=0;
       ali_sim.seq_id=100; ali_sim.mammoth=0;
@@ -1479,7 +1482,7 @@ int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
     if(k==0)goto Print;
     if(type=='C'){
       float ck=k*coeff;
-      for(i=0; i<Ref.N_cart; i++)coord_ref[i]=coord_str1[i]+ck*d_Cart[i];
+      for(i=0; i<Ref.N_Cart; i++)coord_ref[i]=coord_str1[i]+ck*d_Cart[i];
     }else{
       if(type=='R'){ // Random simulation starting from PDB
 	Extract_dphi(d_phi, NM.Tors, sigma, NM.N, naxes, factor, &idum);
@@ -1492,7 +1495,7 @@ int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
 
     // RMSD computation
     rmsd_sim=rmsd_mclachlan_f(coord_ref2, coord_ref, Ref.mass_atom, Ref.N_ref);
-    for(i=0; i<Ref.N_cart; i++)coord_ref2[i]=coord_ref[i];
+    for(i=0; i<Ref.N_Cart; i++)coord_ref2[i]=coord_ref[i];
     rmsd1=rmsd_mclachlan_f(coord_str1, coord_ref, Ref.mass_atom, Ref.N_ref);
     if(coord_str2){
       rmsd2=rmsd_mclachlan_f(coord_str2, coord_ref, Ref.mass_atom, Ref.N_ref);
@@ -1524,9 +1527,9 @@ int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
     if((type!='R')&&(rmsd2>rmsd_min))break;
   }
   char str[1000];
-  sprintf(str, "# Min.RMSD= %.2f Starting_RMSD= %.2f", rmsd_min, rmsd0);
-  sprintf(str, "%s Opt_coeff=%.3f factor= %.3f type=%c\n",
-	  str, coeff*k_opt, factor, type);
+  sprintf(str, "# Min.RMSD= %.2f Starting_RMSD= %.2f"
+	  " Opt_coeff=%.3f factor= %.3f type=%c\n",
+	  rmsd_min, rmsd0, coeff*k_opt, factor, type);
   fprintf(file_out, "%s", str); printf("%s", str);
   fprintf(file_out, "&\n");
   if((PRINT_SIMUL_PDB)&&(type!='R')&&(k_opt>=0)){
@@ -1604,9 +1607,9 @@ float RMSD_LIN(float *RMSD_target, float *RMSD_full,
 	       float *coord_full)
 {
   // Compute new conformation
-  int N_cart=3*Ref.N_ref;
-  float RMSD=0, coord_lin[N_cart];
-  for(int i=0; i<N_cart; i++){
+  int N_Cart=3*Ref.N_ref;
+  float RMSD=0, coord_lin[N_Cart];
+  for(int i=0; i<N_Cart; i++){
     double X=coord_ref_1[i];
     for(int a=0; a<J->N_axes; a++)
       X+=J->Jacobian_ar[a][i]*Delta_phi[a];
@@ -1620,7 +1623,7 @@ float RMSD_LIN(float *RMSD_target, float *RMSD_full,
     RMSD=rmsd_mclachlan_f(coord_ref_1, coord_lin, Ref.mass_atom, Ref.N_ref);
   }
   if(coord_full){
-    float coord_ref[N_cart];
+    float coord_ref[N_Cart];
     Write_ref_coord(coord_ref, Ref.N_ref, coord_full, Ref.atom_num);
     *RMSD_full=
       rmsd_mclachlan_f(coord_ref, coord_lin, Ref.mass_atom, Ref.N_ref);
@@ -1875,7 +1878,7 @@ void  Internal_differences(struct bond *bonds, struct bond *bonds2,
 	  omega2[i]=bond2->phi;
 	  d=bond1->phi-bond2->phi; // difference
 	  if(d>pi){d-=twopi;}else if(d<-pi){d+=twopi;}
-	  bond1->d_phi=fabs(d)*deg; // difference in degrees  //modyves: abs->fabs
+	  bond1->d_phi=fabs(d)*deg; // difference in degrees
 	  diff1[k]+=d; diff2[k]+=d*d; n[k]++;
 	  if((a>=0)&&(a<20)){
 	    diff1_aa[k][a]+=d; diff2_aa[k][a]+=d*d; n_aa[k][a]++;
@@ -2012,7 +2015,7 @@ void Standardize_bonds(struct bond *bonds, atom *atoms,
   Set_reference(&Ref1, 0, "EB", atoms, 0, natoms);
   struct ali_atoms ali_a; Copy_ali(&ali_a, Ref1);
   struct Jacobian J;
-  Allocate_Jacobian(&J, naxes, Ref1.N_cart);
+  Allocate_Jacobian(&J, naxes, Ref1.N_Cart);
   int first_kin[naxes], last_kin[naxes];
   Change_kin(first_kin, last_kin, axes, naxes, natoms, Ref1);
   Compute_kinetic(&J, axes, naxes, atoms, natoms, Ref1, 0);
@@ -2064,7 +2067,7 @@ int Write_RMSD(float *reduce_step, float *RMSD_opt, float *RMSD_kf,
 {
   Put_coord(coord_all, bonds, natoms1);
   Write_ref_coord(coord_new, ali_a.N_ref, coord_all, ali_a.ali1);
-  if(Check_nan_f(coord_new, ali_a.N_cart, "ref_coord")){
+  if(Check_nan_f(coord_new, ali_a.N_Cart, "ref_coord")){
     printf("ERROR nan!!!!\n");
     fprintf(file_rmsd, "# nan\n"); return(0);   
   }
@@ -2114,10 +2117,11 @@ float Optimize_amplitude(struct bond *bonds_min, float *f_min,
 			 int natoms1, struct Reference Ref1,
 			 float *coord_ref_2)
 {
-  float EPS=0.005, RMSD_min=10000, RMSD_RRR; *f_min=-1;
+  float EPS=0.005, RMSD_min=10000, RMSD_RRR=0; *f_min=-1;
   struct bond bonds_tmp[natoms1];
   float f[3], y[3], fmin=0.01, fmax=20; int i;
   f[0]=1.3; f[1]=1; f[2]=0.7;
+  printf("Optimizing amplitude f of torsion angle change:\n");
   for(i=0; i<3; i++){
     y[i]=Compute_RMSD(f[i],Diff_Tors,naxes,
 		      bonds,bonds_tmp,natoms1,Ref1,coord_ref_2);
@@ -2170,7 +2174,7 @@ float Compute_RMSD(float f, float *Diff_Tors, int naxes,
   Build_up(bonds, natoms1, diff_tors, naxes);
   float coord_all[3*natoms1];
   Put_coord(coord_all, bonds, natoms1);
-  float coord_new[Ref1.N_cart];
+  float coord_new[Ref1.N_Cart];
   Write_ref_coord(coord_new, Ref1.N_ref, coord_all, Ref1.atom_num);
   float RMSD=
     rmsd_mclachlan_f(coord_ref_2, coord_new, Ref1.mass_atom, Ref1.N_ref);
@@ -2179,21 +2183,21 @@ float Compute_RMSD(float f, float *Diff_Tors, int naxes,
 
 void Copy_ali(struct ali_atoms *ali_a, struct Reference Ref)
 {    
-  ali_a->N_ref=Ref.N_ref; ali_a->N_cart=Ref.N_cart;
+  ali_a->N_ref=Ref.N_ref; ali_a->N_Cart=Ref.N_Cart;
   ali_a->ali1=Ref.atom_num;
   ali_a->ali2=Ref.atom_num;
   ali_a->mass=Ref.mass_atom;
 }
 
 int Tors_step(struct Tors *Diff, double **T_Lambda, float **Jacobian_ar,
-	      float *mass_coord, int naxes, int N_cart)
+	      float *mass_coord, int naxes, int N_Cart)
 {
   double d_phi[naxes]; int fail=0;
   // Delta_phi=(T+Lambda I)^(-1)(M J^t Delta R)
   double Y[naxes]; int i, a;
   for(a=0; a<naxes; a++){
     Y[a]=0;
-    for(i=0; i<N_cart; i++)
+    for(i=0; i<N_Cart; i++)
       Y[a]+=mass_coord[i]*Jacobian_ar[a][i]*Diff->Cart[i];
     //Y[a]/=sqrt(T_Lambda[a][a]);
   }

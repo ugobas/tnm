@@ -1,5 +1,4 @@
 int DBG=0;
-int START=1;
 #define T_COMPUTE 0 // 0=Cholevsky 1=Diagonalization
 #include "nma_para.h"
 #include "coord.h"
@@ -20,10 +19,9 @@ void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref);
 void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 		 struct Reference Ref);
 void Eckart_test(float **Jacobian_ar, int N_axes,
-		 atom *atoms, int N_atoms,
-		 struct Reference Ref, struct axe *axes);
+		 atom *atoms, int N_atoms, struct Reference Ref);
 int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
-		 struct Reference Ref, int mode, struct axe *axe);
+		 struct Reference Ref, int mode);
 
 void Inertia_tensor(double **inertia, double **corr_sum, double *r_sum,
 		    double M_sum);
@@ -70,12 +68,11 @@ extern void Backward_substitution(double *X, double **L, double *Y, int N);
 void Normal_vector(double *v, struct bond *bond, double *vers);
 int Dof_overlap(struct axe *axe_k, struct axe *axe_l);
 static float Module(double *v);
-static float Det_33(float **rot);
 
 int Compute_kinetic(struct Jacobian *J,
 		    struct axe *axe1, int naxe1,
 		    atom *atoms1, int natoms1,
-		    struct Reference Ref, int SQR)
+		    struct Reference Ref)
 {
   int N_kin=0;
   int test=(J->Jacobian_ar[0][0]==0);
@@ -88,38 +85,36 @@ int Compute_kinetic(struct Jacobian *J,
   Eckart_main(axe1, naxe1, atoms1, natoms1, Ref);
   Internal_Jacobian(*J, Ref, atoms1, natoms1, axe1, naxe1);
   if(test){
-    Eckart_test(J->Jacobian_ar, naxe1, atoms1, natoms1, Ref, axe1);
-    if(0)Correlate_Jacobian(*J, Ref, axe1, naxe1);
+    Eckart_test(J->Jacobian_ar, naxe1, atoms1, natoms1, Ref);
+    Correlate_Jacobian(*J, Ref, axe1, naxe1);
   }
+  if(J->T_sqrt_inv){
+    Empty_matrix_f(J->T_sqrt_inv, naxe1); J->T_sqrt_inv=NULL;
+  }
+
   Kinetic_energy_fast(J, axe1, naxe1, atoms1, natoms1, Ref);
   //Kinetic_energy_Jac(*J, Ref, naxe1);
 
-  if(SQR){
-    // Compute T_sqrt with Cholevsky decomposition
-    // Empty matrices
-    if(J->T_sqrt_inv){
-      Empty_matrix_f(J->T_sqrt_inv, naxe1); J->T_sqrt_inv=NULL;
-    }
-    if(J->T_sqrt_inv_tr!=NULL){
-      Empty_matrix_f(J->T_sqrt_inv_tr, naxe1); J->T_sqrt_inv_tr=NULL;
-    }
-    if(J->T_sqrt_tr!=NULL){
-      Empty_matrix_f(J->T_sqrt_tr, N_kin); J->T_sqrt_tr=NULL;
-    }
-    if(J->Jtilde_ar!=NULL){
-      Empty_matrix_f(J->Jtilde_ar, naxe1); J->Jtilde_ar=NULL;
-    }
+  Kinetic_sqrt(J, &(N_kin), naxe1, T_COMPUTE, E_MIN);
 
-    // Compute T_sqrt with Cholevsky decomposition
-    Kinetic_sqrt(J, &(N_kin), naxe1, T_COMPUTE, E_MIN);    
-    // Transpose matrix to accelerate computation
-    if(J->T_sqrt_inv){
-      J->T_sqrt_inv_tr=Transpose_matrix(J->T_sqrt_inv, N_kin, naxe1);
-    }else{
-      J->T_sqrt_tr=Transpose_matrix_d2f(J->T_sqrt, N_kin, N_kin);
-    }
+  // Transpose matrix to accelerate computation
+  if(J->T_sqrt_inv_tr!=NULL){
+    Empty_matrix_f(J->T_sqrt_inv_tr, naxe1); J->T_sqrt_inv_tr=NULL;
+  }
+  if(J->T_sqrt_tr!=NULL){
+    Empty_matrix_f(J->T_sqrt_tr, N_kin); J->T_sqrt_tr=NULL;
+  }
+  if(J->T_sqrt_inv){
+    J->T_sqrt_inv_tr=Transpose_matrix(J->T_sqrt_inv, N_kin, naxe1);
+  }else{
+    J->T_sqrt_tr=Transpose_matrix_d2f(J->T_sqrt, N_kin, N_kin);
   }
   J->N_kin=N_kin;
+
+  // Empty matrices
+  if(J->Jtilde_ar!=NULL){
+    Empty_matrix_f(J->Jtilde_ar, naxe1); J->Jtilde_ar=NULL;
+  }
 
   // Show results
   if(DBG){
@@ -130,7 +125,7 @@ int Compute_kinetic(struct Jacobian *J,
     for(i=0; i<m; i++)printf("%.1f ", J->Jacobian_ar[i][0]);
     printf("\nKinetic energy matrix. ");
     printf("%d dofs atoms= %d cart= %d Nkin= %d\n",
-	   naxe1, natoms1, Ref.N_Cart, N_kin);
+	   naxe1, natoms1, Ref.N_cart, N_kin);
     for(i=0; i<m; i++){
       for(j=0; j<m; j++)printf("%.2g\t", J->T_sqrt[i][j]);
       printf("\n");
@@ -138,7 +133,7 @@ int Compute_kinetic(struct Jacobian *J,
     printf("Axis properties\n");
     struct axe *axe=axe1;
     for(i=0; i<30; i++){
-      printf("%c%d\t%s-%s\t%d-%d\t%d-%d\t%.2g\t%.2g\t%.2g\t%.2g\t%.2g\n",
+      printf("%c%d\t%s-%s\t%d-%d\t%d-%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\n",
 	     axe->type, i,
 	     axe->bond->previous->atom->name, axe->bond->atom->name,
 	     axe->first_atom, axe->last_atom,
@@ -149,7 +144,7 @@ int Compute_kinetic(struct Jacobian *J,
       axe++;
     }
   }
-  START=0;
+  //exit(8);
 
   return(N_kin);
 }
@@ -160,8 +155,8 @@ int Kinetic_energy(double ***T_mat, float *mass_coord,
 {
   // Compute kinetic energy tensor T=T_sqrt T_sqrt^T (only internal dof)
   // Lower tridiagonal matrix T_sqrt[i][j] with j<=i
-  int k, l, i, j, ini_ref, N_Cart=3*N_ref;
-  float **J_ar=Allocate_mat2_f(N_axes, N_Cart), *J, dr[3];
+  int k, l, i, j, ini_ref, N_cart=3*N_ref;
+  float **J_ar=Allocate_mat2_f(N_axes, N_cart), *J, dr[3];
   *T_mat=Allocate_mat2_d(N_axes, N_axes);
 
   // Local Jacobian (only atoms upstream of k)
@@ -195,13 +190,11 @@ int Kinetic_energy(double ***T_mat, float *mass_coord,
     for(k=l+1; k<N_axes; k++)(*T_mat)[k][l]=(*T_mat)[l][k];
   }
   if(DEBUG){
-    for(l=0; l<10; l++){
-      for(k=0; k<=l; k++){
+    for(l=0; l<10; l++)
+      for(k=0; k<=l; k++)
 	printf("%d %d %d %d\n", l, k,
 	       axe[ini_axe+l].first_kin, axe[ini_axe+k].first_kin);
-      }
-    }
-    printf("\n");
+      printf("\n");
     for(l=0; l<20; l++){
       for(k=0; k<=l; k++)printf("%.2g ", (*T_mat)[l][k]);
       printf("\n");
@@ -290,16 +283,16 @@ int Kinetic_energy_fast(struct Jacobian *J, struct axe *axe, int N_axes,
       // to add the following terms:
       T-=M_tot*Scalar_product_3_d(axe_l->global_shift,axe_k->global_shift);
       T-=Scalar_product_3_d(I_tot_rot_l, axe_k->global_rot);
-      J->T[l][k]=T;
-      if(l!=k)J->T[k][l]=T;
+      J->T_sqrt[l][k]=T;
+      if(l!=k)J->T_sqrt[k][l]=T;
     }
   }
 
-  if(DBG){
+  if(DEBUG){
     int ini=N_axes-20;
     printf("###  Kinetic energy matrix (calc):\n");
     for(k=ini; k<ini+20; k++){
-      for(l=ini; l<=k; l++)printf(" %.3g", J->T[k][l]);
+      for(l=ini; l<=k; l++)printf(" %.3g", J->T_sqrt[k][l]);
       printf("\n");
     }
   }
@@ -314,19 +307,19 @@ int Kinetic_energy_fast(struct Jacobian *J, struct axe *axe, int N_axes,
 int Kinetic_energy_Jac(struct Jacobian J, struct Reference Ref, int N_axes)
 {
   // Compute kinetic energy tensor T=T_sqrt T_sqrt^T (only internal dof)
-  // Lower tridiagonal matrix T[i][j] with j<=i
+  // Lower tridiagonal matrix T_sqrt[i][j] with j<=i
   int k, l, j, diff=0;
   for(l=0; l<N_axes; l++){
     float *Jl=J.Jacobian_ar[l];
     for(k=0; k<=l; k++){
       float *Jk=J.Jacobian_ar[k]; double sum=0;
-      for(j=0; j<Ref.N_Cart; j++)sum+=Jk[j]*Jl[j]*Ref.mass_coord[j];
-      if(fabs(sum-J.T[l][k])>0.0001*fabs(J.T[l][l])){
-	printf("%d %d %.6f %.6f\n", l, k, sum, J.T[l][k]);
+      for(j=0; j<Ref.N_cart; j++)sum+=Jk[j]*Jl[j]*Ref.mass_coord[j];
+      if(fabs(sum-J.T_sqrt[l][k])>0.0001*fabs(J.T_sqrt[l][l])){
+	printf("%d %d %.6f %.6f\n", l, k, sum, J.T_sqrt[l][k]);
 	diff++;
       }
-      J.T[l][k]=sum;
-      if(l!=k)J.T[k][l]=J.T[l][k];
+      J.T_sqrt[l][k]=sum;
+      if(l!=k)J.T_sqrt[k][l]=J.T_sqrt[l][k];
     }
   }
   if(diff){
@@ -339,7 +332,7 @@ int Kinetic_energy_Jac(struct Jacobian J, struct Reference Ref, int N_axes)
     int ini=N_axes-20;
     printf("###  Kinetic energy matrix (calc):\n");
     for(k=ini; k<ini+20; k++){
-      for(l=ini; l<=k; l++)printf(" %.4g", J.T[k][l]);
+      for(l=ini; l<=k; l++)printf(" %.4g", J.T_sqrt[k][l]);
       printf("\n");
     }
   }
@@ -356,8 +349,8 @@ int Kinetic_sqrt(struct Jacobian *J, int *N_kin,
   (*N_kin)=N;
 
   if(CONTROL==0){
-    if(START)printf("Kinetic_sqrt with Cholevsky decomposition\n");
-    if(choldc(J->T_sqrt, J->T, N)==0){
+    printf("Kinetic_sqrt with Cholevsky decomposition\n");
+    if(choldc(J->T_sqrt, J->T_sqrt, N)==0){
       //J->T_sqrt_inv=Cholevsky_inversion_d2f(J->T_sqrt, N);
       for(k=0; k<N; k++){
 	double *Lk=J->T_sqrt[k]+k+1;
@@ -375,7 +368,7 @@ int Kinetic_sqrt(struct Jacobian *J, int *N_kin,
     int num=0, ik;
     if(J->T_sqrt_inv)Empty_matrix_f(J->T_sqrt_inv, N);
     J->T_sqrt_inv=Allocate_mat2_f(N, N);
-    d_Diagonalize(N, J->T, eigen_value, eigen_vector, 1);
+    d_Diagonalize(N, J->T_sqrt, eigen_value, eigen_vector, 1);
     for(k=0; k<N; k++){
       if(eigen_value[k]<E_MIN){t=0; num++; continue;}
       else{t=sqrt(eigen_value[k]); t_inv=1./t; ik=k-num;}
@@ -399,8 +392,8 @@ void  Set_rot_shift(struct axe *axes, int N_axes, atom *atoms, int N_atoms)
   // Axes vector and shift
   for(k=0; k<N_axes; k++){
     struct axe *axe=axes+k;
-    double *r1=axe->bond->previous->atom->r;
-    double *r2=axe->bond->atom->r;
+    double *r1=axe->axe->previous->atom->r;
+    double *r2=axe->axe->atom->r;
     double v2=0;
     for(j=0; j<3; j++){
       axe->offset[j]=r1[j];               // Get offset as r1
@@ -417,25 +410,11 @@ void  Set_rot_shift(struct axe *axes, int N_axes, atom *atoms, int N_atoms)
 	axe->rot[j]=0;
       }
     }else if(axe->type=='a'){ // bond angle
-      if(axe->bond->previous->previous==NULL){
-	printf("ERROR in bond angle %d\n", k); exit(8);
-      }
-      // Compute normal vector
-      double *r0=axe->bond->previous->previous->atom->r;
-      double v0[3], normal[3];
-      for(j=0; j<3; j++)v0[j]=r1[j]-r0[j];
-      Vector_product_d(normal, v, v0);
-      // Normalize:
-      double v2=0; for(j=0; j<3; j++)v2+=normal[j]*normal[j];
-      if(v2<=0){
-	printf("ERROR for bond angle %d, zero norm (%.6f)\n",k, v2);
-	exit(8);
-      }
-      v2=1./sqrt(v2); for(j=0; j<3; j++)normal[j]*=v2;
-      Vector_product_d(shift, normal, offset);
+      Normal_vector(v, axe->bond, axe->vers);
+      Vector_product_d(shift, v, offset);
       for(j=0; j<3; j++){
 	axe->shift[j]=-shift[j];
-	axe->rot[j]=normal[j];
+	axe->rot[j]=v[j];
       }
     }else{   // torsion
       Vector_product_d(shift, axe->vers, offset);
@@ -469,18 +448,9 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
   /******************************************************************/
   // Initialize
   int i, j, k;
-
- // Compute inertia tensor and center of mass for all atoms
   double **corr_sum=Allocate_mat2_d(3,3), mr_tot[3];
-  for(i=0; i<3; i++)mr_tot[i]=0;
   double M_tot=Sum_inertia(mr_tot, corr_sum, atoms, Ref, 0, Ref.N_ref-1);
   double r_ave[3]; for(i=0; i<3; i++)r_ave[i]=mr_tot[i]/M_tot;
-  if(START){
-    printf("Center of mass: ");
-    for(i=0; i<3; i++)printf("  %.7f", r_ave[i]);
-    printf("   M=%.0f\n", M_tot);
-  }
-
   double **inertia_tot=Allocate_mat2_d(3,3);
   Inertia_tensor(inertia_tot, corr_sum, mr_tot, M_tot);
 
@@ -490,9 +460,7 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 
   // Partial inertia tensor for all axes
   // Exploits the fact that axes are nested
-  double M_part=0, mr_part[3], **inertia_part=Allocate_mat2_d(3,3);
-  Empty_inertia(mr_part, corr_sum);
-
+  double mr_part[3], M_part=0, **inertia_part=Allocate_mat2_d(3,3);
   struct axe *axe=axes+N_axes-1;
   int last_kin=-1, i_last=0;
   for(int k=N_axes-1; k>=0; k--){
@@ -503,10 +471,9 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
       last_kin=axe->last_kin;
       i_last=last_kin;
     }
-    //M_part+=Sum_inertia(mr_part, corr_sum, atoms, Ref, axe->first_kin, i_last);
     M_part+=Sum_inertia(mr_part, corr_sum, atoms, Ref, axe->first_kin, i_last);
-    Inertia_tensor(inertia_part, corr_sum, mr_part, M_part);
     i_last=axe->first_kin-1;
+    Inertia_tensor(inertia_part, corr_sum, mr_part, M_part);
 
     // Test that at least some atom is moved
     if(M_part==0){
@@ -529,7 +496,6 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 
     // Center of mass displacement
     double delta_cm[3], r_shift[3], rot_tot[3], X[3], Y[3];
-    for(i=0; i<3; i++)r_shift[i]=M_part*mr_tot[i]-mr_part[i];
     Vector_product_d(delta_cm, axe->rot, mr_part);
     for(i=0; i<3; i++)delta_cm[i]=delta_cm[i]/M_part+axe->shift[i];
     for(i=0; i<3; i++)r_shift[i]=M_part*r_ave[i]-mr_part[i];
@@ -571,7 +537,7 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
     printf(" first_ref first_rotable_atom type\n");
     for(k=0; k<N_axes; k++){
       axe=axes+k;
-      printf("%3d %3d ", k, axe->bond->atom->res);
+      printf("%3d %3d ", k, axe->axe->atom->res);
       v=axe->local_rot;
       q=Scalar_product_3_d(v,v); printf(" %.3f ", sqrt(q));
       v=axe->local_shift;
@@ -599,11 +565,11 @@ int Compute_Jtilde(struct Jacobian *J)
   int a, i, b;
 
   if(J->Jtilde_ar==NULL)
-    J->Jtilde_ar=Allocate_mat2_f(J->N_axes, J->N_Cart);
+    J->Jtilde_ar=Allocate_mat2_f(J->N_axes, J->N_cart);
   if(J->T_sqrt_inv!=NULL){
     // T_sqrt is not lower diagonal!
     for(a=0; a<J->N_kin; a++){
-      for(i=0; i<J->N_Cart; i++){
+      for(i=0; i<J->N_cart; i++){
 	double sum=0;
 	for(b=0; b<J->N_axes; b++)
 	  sum+=J->T_sqrt_inv[a][b]*J->Jacobian_ar[b][i];
@@ -615,7 +581,7 @@ int Compute_Jtilde(struct Jacobian *J)
     // T_sqrt Jtilde = J
     double *X=malloc(J->N_axes*sizeof(double));
     double *Y=malloc(J->N_axes*sizeof(double));
-    for(i=0; i<J->N_Cart; i++){
+    for(i=0; i<J->N_cart; i++){
       for(a=0; a<J->N_axes; a++)Y[a]=J->Jacobian_ar[a][i];
       Forward_substitution(X, J->T_sqrt, Y, J->N_axes);
       for(a=0; a<J->N_axes; a++)J->Jtilde_ar[a][i]=X[a];
@@ -668,24 +634,24 @@ int Internal_Jacobian(// Output:
 		      // Input:
 		      struct Reference Ref,
 		      atom *atoms, int N_atoms,
-		      struct axe *axes, int N_axes)
+		      struct axe *axe, int N_axes)
 {
   // Jacobian: derivatives with respect to torsions for all atoms
   // (only internal degrees of freedom)
   int i, j, k;
   for(k=0; k<N_axes; k++){
     float *Jacobian_a=J.Jacobian_ar[k]; int jj=0;
-    struct axe *axe=axes+k;
+    struct axe *axe_k=axe+k;
     for(i=0; i<Ref.N_ref; i++){
-      double *rot,  *shift;
-      if((i>=axe->first_kin)&&(i<=axe->last_kin)){
-	rot=axe->local_rot;  shift=axe->local_shift;
+      double *rot,  *shift, dk[3];
+      if((i>=axe_k->first_kin)&&(i<=axe_k->last_kin)){
+	rot=axe[k].local_rot;  shift=axe[k].local_shift;
       }else{
-	rot=axe->global_rot; shift=axe->global_shift;
+	rot=axe[k].global_rot; shift=axe[k].global_shift;
       }
       double *ri=atoms[Ref.atom_num[i]].r;
       double r[3]; for(j=0; j<3; j++)r[j]=ri[j];
-      double dk[3]; Vector_product_d(dk, rot, r);
+      Vector_product_d(dk, rot, r);
       for(j=0; j<3; j++){
 	Jacobian_a[jj]=(dk[j]+shift[j]); jj++;
       }
@@ -696,13 +662,12 @@ int Internal_Jacobian(// Output:
 }
 
 void Eckart_test(float **Jacobian_ar, int N_axes,
-		 atom *atoms, int N_atoms,
-		 struct Reference Ref, struct axe *axes)
+		 atom *atoms, int N_atoms, struct Reference Ref)
 {
   printf("Testing Eckart conditions for each axis (%d)\n", N_axes);
   int EV=0;
   for(int k=0; k<N_axes; k++){
-    EV+=Test_Eckart(Jacobian_ar[k], atoms, N_atoms, Ref, k, axes+k);
+    EV+=Test_Eckart(Jacobian_ar[k], atoms, N_atoms, Ref, k);
   }
   if(EV){
     printf("ERROR, %d violations of the Eckart conditions\n", EV);
@@ -711,7 +676,7 @@ void Eckart_test(float **Jacobian_ar, int N_axes,
 }
 
 int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
-		 struct Reference Ref, int mode, struct axe *axe)
+		 struct Reference Ref, int mode)
 {
   // r_sum = sum_i m_i Delta_r_i
   // r_rot = sum_i r_i X Delta_r_i
@@ -733,7 +698,7 @@ int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
   }
   r1=sqrt(r1)/norm; r2=sqrt(r2)/norm;
   if((r1>0.001)||(r2>0.001)){
-    printf("%3d %c <d>= %.8f <r_X_d>= %.8f\n", mode, axe->type, r1, r2);
+    printf("%3d <d>= %.8f <r_X_d>= %.8f\n", mode, r1, r2);
     return(1);
   }
   return(0);
@@ -788,7 +753,7 @@ void Normal_vector(double *v, struct bond *bond, double *vers)
   }
   double *r1=bond->previous->atom->r, dr[3];
   for(j=0; j<3; j++)dr[j]=r1[j]-r0[j];
-  Vector_product_d(v, vers, dr);
+  Vector_product_d(v, dr, vers);
   // Normalize:
   double v2=0; for(j=0; j<3; j++)v2+=v[j]*v[j];
   if(v2<=0){
@@ -823,13 +788,12 @@ int Dof_overlap(struct axe *axe_k, struct axe *axe_l)
   exit(8);
 }
 
-void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_Cart)
+void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_cart)
 {
-  J->N_axes=N_axes; J->N_Cart=N_Cart;
-  J->T=Allocate_mat2_d(N_axes,N_axes);
+  J->N_axes=N_axes; J->N_cart=N_cart;
   J->T_sqrt=Allocate_mat2_d(N_axes,N_axes);
-  J->Jacobian_ar=Allocate_mat2_f(N_axes,N_Cart);
-  J->Jtilde_ar=NULL;  // Allocate_mat2_f(N_axes,N_Cart);
+  J->Jacobian_ar=Allocate_mat2_f(N_axes,N_cart);
+  J->Jtilde_ar=NULL;  // Allocate_mat2_f(N_axes,N_cart);
   J->T_sqrt_tr=NULL;
   J->T_sqrt_inv=NULL;
   J->T_sqrt_inv_tr=NULL;
@@ -837,12 +801,10 @@ void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_Cart)
 
 void Empty_Jacobian(struct Jacobian J)
 {
-  if(J.T!=NULL)Empty_matrix_d(J.T, J.N_axes);
   if(J.Jacobian_ar!=NULL)Empty_matrix_f(J.Jacobian_ar, J.N_axes);
   if(J.Jtilde_ar!=NULL)Empty_matrix_f(J.Jtilde_ar, J.N_axes);
   if(J.T_sqrt!=NULL)Empty_matrix_d(J.T_sqrt, J.N_axes);
   if(J.T_sqrt_inv!=NULL)Empty_matrix_f(J.T_sqrt_inv, J.N_axes);
-  if(J.T_sqrt_tr!=NULL)Empty_matrix_f(J.T_sqrt_tr, J.N_kin); //modyves: this was never freed
 }
 
 float Empty_inertia(double *mr_tot, double **corr_sum)
@@ -858,6 +820,7 @@ float Sum_inertia(double *mr_tot, double **corr_sum,
 		  int ini_ref, int end_ref)
 {
   double M_tot=0; int i, j;
+  for(i=0; i<3; i++)for(j=i; j<3; j++)corr_sum[i][j]=0;
   for(int iref=ini_ref; iref<=end_ref; iref++){
     double *r=atoms[Ref.atom_num[iref]].r;
     double m = Ref.mass_atom[iref];
@@ -877,60 +840,41 @@ void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref)
   double r_ave[3], mr_tot[3]; int i, k, l;
 
   // Compute inertia tensor and center of mass for all atoms
-  for(i=0; i<3; i++)mr_tot[i]=0;
   double M_tot=Sum_inertia(mr_tot, corr_sum, atoms, Ref, 0, Ref.N_ref-1);
-  for(i=0; i<3; i++)r_ave[i]=mr_tot[i]/M_tot;
   Inertia_tensor(inertia_tot, corr_sum, mr_tot, M_tot);
+
+  for(i=0; i<3; i++)r_ave[i]=mr_tot[i]/M_tot;
+  printf("Center of mass: ");
+  for(i=0; i<3; i++)printf("  %.7f", r_ave[i]);
+  printf("  M=%.1f\n", M_tot);
+
   float eigen_value[3], **rot=Allocate_mat2_f(3, 3);
   d_Diagonalize(3, inertia_tot, eigen_value, rot, 1);
-  float det=Det_33(rot);
-  printf("Determinant= %.3f\n", det);
-  if(det<0){
-    k=0;
-    while(k<3){
-      for(l=0; l<3; l++)rot[k][l]=-rot[k][l];
-      det=Det_33(rot); if(det>0)break;
-      for(l=0; l<3; l++)rot[k][l]=-rot[k][l];
-      k++;
-    }
-    printf("Determinant= %.3f\n", det);
-  }
-
-  if(0){
-    printf("Center of mass: ");
-    for(i=0; i<3; i++)printf("  %.7f", r_ave[i]);
-    printf("  M=%.1f\n", M_tot);
-    printf("Inertia_values: ");
-    for(k=0; k<3; k++)printf(" %.0f", eigen_value[k]);
-    printf("\n");
-    printf("Rotation matrix:\n");
-    for(k=0; k<3; k++){
-      for(l=0; l<3; l++)printf(" %.3f", rot[k][l]);
-      printf("\n");
-    }
+  printf("Inertia_values: ");
+  for(k=0; k<3; k++)printf(" %.0f", eigen_value[k]); printf("\n");
+  printf("Principal axes:\n");
+  for(k=0; k<3; k++){
+    float *v=rot[k];
+    for(l=0; l<3; l++)printf(" %.3f", v[l]); printf("\n");
   }
 
   // Rotate atoms coordinates
   for(i=0; i<N_atoms; i++){
-    double rr[3], *r=atoms[i].r;
+    double rr[3], *rk=rr, *r=atoms[i].r;
     for(k=0; k<3; k++){
-      //double rk=0; for(l=0; l<3; l++)rk+=rot[k][l]*r[l]; rr[k]=rk;
-      rr[k]=rot[k][0]*r[0]+rot[k][1]*r[1]+rot[k][2]*r[2];
+      *rk=0; for(l=0; l<3; l++)*rk+=rot[k][l]*r[l]; rk++;
     }
     for(k=0; k<3; k++)r[k]=rr[k];
   }
 
   if(0){
-    // Test that inertia tensor is diagonal
-    for(i=0; i<3; i++)mr_tot[i]=0;
     M_tot=Sum_inertia(mr_tot, corr_sum, atoms, Ref, 0, Ref.N_ref-1);
     Inertia_tensor(inertia_tot, corr_sum, mr_tot, M_tot);
     d_Diagonalize(3, inertia_tot, eigen_value, rot, 1);
     printf("Principal axes:\n");
     for(k=0; k<3; k++){
       float *v=rot[k];
-      for(l=0; l<3; l++)printf(" %.3f", v[l]);
-      printf("\n");
+      for(l=0; l<3; l++)printf(" %.3f", v[l]); printf("\n");
     }
     exit(8);
   }
@@ -938,12 +882,4 @@ void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref)
   Empty_matrix_d(corr_sum, 3);
   Empty_matrix_d(inertia_tot, 3);
   Empty_matrix_f(rot, 3);
-}
-
-float Det_33(float **rot){
-  float det=
-    rot[0][0]*(rot[1][1]*rot[2][2]-rot[1][2]*rot[2][1])-
-    rot[0][1]*(rot[1][0]*rot[2][2]-rot[1][2]*rot[2][0])+
-    rot[0][2]*(rot[1][0]*rot[2][1]-rot[1][1]*rot[2][0]);
-  return(det);
 }

@@ -45,6 +45,7 @@ COBJ= main_tnm.o \
 	simulation.o \
 	force2confchange.o \
 	mutation.o \
+	Fit.o \
 	optimization.o \
 	output_tnm.o \
 	allostery.o \

@@ -130,7 +130,7 @@ void Print_B(float *B, int nca, FILE *file_out, char *model, float cc);
 void Print_PDB_3(float *Cart_mode, float eigen_value, float eigen_B,
 		 atom *atoms, int N_atom_ref, int *atom_ref,
 		 struct residue *seq, char *file_name, int ia);
-void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
+void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_Cart,
 		   float **Tors_mode_ANM, float **Tors_mode_TNM, int N_tors,
 		   float *mass_coord, char *prot_name, char *inter);
 void Print_modes_old(float *eigen_value, float **eigen_vector, float *eigen_B,
@@ -724,22 +724,24 @@ int Set_reference(// Output:
   int N_ref=
     Select_atoms(Ref->atom_num+ini_ref, atoms+ini_atom, natoms, SEL);
   Ref->N_ref=N_ref;
-  Ref->N_cart=3*N_ref;
+  Ref->N_Cart=3*N_ref;
   printf("%d atoms out of %d selected for kinetic energy (%s)\n",
 	 N_ref, natoms, SEL);
   Ref->mass_atom=malloc(N_ref*sizeof(float));
-  Ref->mass_coord=malloc((3*N_ref)*sizeof(float));
-  float *ma=Ref->mass_atom, *mc=Ref->mass_coord;
+  Ref->mass_coord=malloc(Ref->N_Cart*sizeof(float));
+  Ref->mass_sqrt=malloc(Ref->N_Cart*sizeof(float));
+
+  float *ma=Ref->mass_atom, *mc=Ref->mass_coord, *ms=Ref->mass_sqrt;
   int *a_num=Ref->atom_num;
-  double mass_tot=0;
+  double mass_sum=0;
   for(int i=ini_ref; i<ini_ref+N_ref; i++){
     (*a_num)+=ini_atom;
     (*ma) = Mass(atoms+(*a_num));
-    mass_tot+=(*ma);
-    for(int j=0; j<3; j++){*mc = *ma; mc++;}
+    mass_sum+=(*ma);
+    for(int j=0; j<3; j++){*mc = *ma; *ms=sqrt(*ma); mc++; ms++;}
     ma++; a_num++;
   }
-  Ref->mass_tot=mass_tot;
+  Ref->mass_sum=mass_sum;
   return(N_ref);
 }
 
@@ -761,7 +763,7 @@ int Align_references(struct ali_atoms *ali_atoms,
     }
   }
   printf("%d aligned reference atoms\n", iali);
-  ali_atoms->N_ref=iali; ali_atoms->N_cart=3*iali;
+  ali_atoms->N_ref=iali; ali_atoms->N_Cart=3*iali;
   return(iali);
 }
 
@@ -783,6 +785,7 @@ void Empty_Ref(struct Reference *Ref){
   free(Ref->atom_num);
   free(Ref->mass_atom);
   free(Ref->mass_coord);
+  free(Ref->mass_sqrt);
 }
 
 void Convert_torsion2cart(float *Cart_mode, atom *atoms, float *u_a,
@@ -808,8 +811,8 @@ void Convert_torsion2cart(float *Cart_mode, atom *atoms, float *u_a,
     u_ak++; axe++;
   }
 
-  double dr_daxe_rot[Ref.N_cart], dr_daxe_shift[Ref.N_cart];
-  for(j=0; j<Ref.N_cart; j++){
+  double dr_daxe_rot[Ref.N_Cart], dr_daxe_shift[Ref.N_Cart];
+  for(j=0; j<Ref.N_Cart; j++){
     dr_daxe_rot[j]=0;
     dr_daxe_shift[j]=0;
   }
@@ -839,7 +842,11 @@ void Convert_torsion2cart(float *Cart_mode, atom *atoms, float *u_a,
       jj++;
     }
   }
-  Normalize_vector_weighted(Cart_mode, Ref.mass_coord, Ref.N_cart);
+  Normalize_vector_weighted(Cart_mode, Ref.mass_coord, Ref.N_Cart);
+
+  // UGO 10/08/22 r_i=sqrt(m_i)*x_i;
+  float norm=sqrt(Ref.mass_sum/Ref.N_ref);
+  for(j=0; j<Ref.N_Cart; j++)Cart_mode[j]*=norm; //Ref.mass_sqrt[j];
 
   if(0){
     // Test Eckart conditions. 15/03/19 I verified that they are fulfilled
@@ -882,8 +889,8 @@ void Convert_torsion2cart_old(float *Cart_mode, atom *atoms, float *u_a,
 
   int  i, j, k, jj;
 
-  double dr_daxe_rot[J->N_cart], dr_daxe_shift[J->N_cart];
-  for(j=0; j<J->N_cart; j++){
+  double dr_daxe_rot[J->N_Cart], dr_daxe_shift[J->N_Cart];
+  for(j=0; j<J->N_Cart; j++){
     dr_daxe_rot[j]=0; dr_daxe_shift[j]=0;
   }
   float *u_ak=u_a;
@@ -945,7 +952,7 @@ int Convert_cart2torsion1(float *Tors_dev,
   for(a=0; a<J->N_axes; a++){
     float *Jt=J->Jtilde_ar[a]; sum=0;
     float *r=Cart_dev, *m=Ref.mass_coord;
-    for(j=0; j<J->N_cart; j++)sum+=m[j]*r[j]*Jt[j];
+    for(j=0; j<J->N_Cart; j++)sum+=m[j]*r[j]*Jt[j];
     Masswtd_Tors_dev[a]=sum;
   }
   if(J->T_sqrt_inv){
@@ -989,7 +996,7 @@ int Convert_cart2torsion(struct Tors *D, struct Reference Ref,
   // Compute Masswtd_Tors_dev = Jtilde M Delta_r
   for(a=0; a<J->N_axes; a++){
     float *Jt=J->Jtilde_ar[a], *r=D->Cart, *m=Ref.mass_coord;
-    sum=0; for(j=0; j<J->N_cart; j++)sum+=m[j]*r[j]*Jt[j];
+    sum=0; for(j=0; j<J->N_Cart; j++)sum+=m[j]*r[j]*Jt[j];
     D->MW_Tors[a]=sum;
   }
   if(J->T_sqrt_inv){
@@ -1029,7 +1036,7 @@ int Convert_cart2torsion_fit(struct Tors *D, struct Reference Ref,
      T=JMJ^t = LL^t
   */
   
-  int Npar=J->N_axes, Nsam=J->N_cart, a;
+  int Npar=J->N_axes, Nsam=J->N_Cart, a;
   float **X=malloc(Nsam*sizeof(float *));
   float D_out[Npar], Y[Nsam];
   for(int i=0; i<Nsam; i++){
@@ -1076,13 +1083,19 @@ float Tors_fraction(struct Tors *Diff, float *mass)
 {
   double MRR=0, MRT=0, MRW=0, mtot=0; int i;
   // Torsional part / Total
-  for(i=0; i<Diff->N_cart; i++)MRR+=mass[i]*Diff->Cart[i]*Diff->Cart[i];
-  for(i=0; i<Diff->N_cart; i+=3)mtot+=mass[i];
+  if(Diff->RMSD==0){
+    for(i=0; i<Diff->N_Cart; i++){
+      MRR+=mass[i]*Diff->Cart[i]*Diff->Cart[i]; mtot+=mass[i];
+    }
+    Diff->RMSD=sqrt(MRR/mtot);
+    Diff->M=mtot;
+  }else{
+    mtot=Diff->M; MRR=Diff->M*Diff->RMSD*Diff->RMSD;
+  }
   for(i=0; i<Diff->N_axes; i++){
     MRW += Diff->MW_Tors[i]*Diff->MW_Tors[i];
     MRT += Diff->Tors[i]*Diff->Tors[i];
   }
-  Diff->RMSD=sqrt(MRR/mtot);
   Diff->RMSD_W=sqrt(MRW/mtot);
   Diff->RMSD_Tors=sqrt(MRT/Diff->N_axes);
   Diff->RMSD_NoTors=sqrt((MRR-MRW)/mtot);
@@ -1176,7 +1189,8 @@ int Inertia_tensor_old(atom *atoms, int *atom_ref, int N, double *r_ave,
   // Printing
   printf("# Inertia tensor:\n");
   for(j=0; j<3; j++){
-    for(k=0; k<3; k++)printf("%6.0f ", inertia[j][k]); printf("\n");
+    for(k=0; k<3; k++)printf("%6.0f ", inertia[j][k]);
+    printf("\n");
   }
   return(0);
 }
@@ -1216,7 +1230,7 @@ double Center_of_mass(double *r_sum, atom *atoms, int *atom_ref, int N_ref)
   for(i_atom=0; i_atom<N_ref; i_atom++){
     i=atom_ref[i_atom];
     double m=Mass(atoms+i), *r=atoms[i].r;
-    for(j=0; j<3; j++)r_sum[j]+=m*r[j]; m_tot+=m;
+    m_tot+=m; for(j=0; j<3; j++)r_sum[j]+=m*r[j];
   }
   for(j=0; j<3; j++)r_sum[j]/=m_tot;
   return(m_tot);
@@ -1415,7 +1429,7 @@ void Compute_anisou(float ***aniso_pred, int N_modes, int N_ref,
 
 void Predict_fluctuations(struct Normal_Mode *NM, float *sigma2)
 {
-  int naxe=NM->N_axes, ncart=NM->N_cart, i, a;
+  int naxe=NM->N_axes, ncart=NM->N_Cart, i, a;
   double tors_fluct[naxe];
   for(a=0; a<naxe; a++)tors_fluct[a]=0;
   double cart_fluct[ncart];
@@ -1452,21 +1466,6 @@ void Print_tors_fluct2(struct Normal_Mode NM, struct axe *axe, int naxe,
 	    axe[a].type, r->pdbres, r->chain, r->amm, NM.tors_fluct[a]);
   }
   fclose(file_out);
-}
-
-
-float Compute_correlation(float **Cart_mode, float *sigma2,
-			  int N_modes, int i1, int i2)
-{
-  int ia, k1=3*i1, k2=3*i2, j;
-  double corr=0; float *r1, *r2;
-  for(ia=0; ia< N_modes; ia++){
-    if(sigma2[ia]==0)continue;
-    r1=Cart_mode[ia]+k1;
-    r2=Cart_mode[ia]+k2;
-    for(j=0; j<3; j++){corr += (*r1)*(*r2)*sigma2[ia]; r1++; r2++;}
-  }
-  return(corr);
 }
 
 
@@ -1566,7 +1565,7 @@ int Compare_anisou(float ***aniso_pred, float ***aniso_exp, int nca,
 	dot /= dot_norm;
       */
       dot=Scalar_product_3(e_vec1[0], e_vec2[0]);
-      if(dot<0)dot=-dot; sum_dot += dot;
+      if(dot<0){dot=-dot;} sum_dot += dot;
 
       /***********   delta   **************/
       delta=0;           // delta = sqrt(sum_ij(U1_ij-U2_ij)^2/9)
@@ -1714,7 +1713,7 @@ float Output_modes(int N,           //degrees of freedom
 }
 
 
-void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
+void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_Cart,
 		   float **Tors_mode_ANM, float **Tors_mode_TNM, int N_tors,
 		   float *mass_coord, char *prot_name, char *inter)
 {
@@ -1723,12 +1722,12 @@ void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
   float q;
   float *Ovlp_cart_max_TNM=malloc(N_tors*sizeof(float));
   float *Ovlp_tors_max_TNM=malloc(N_tors*sizeof(float));
-  float *Ovlp_cart_max_ANM=malloc(N_cart*sizeof(float));
-  float *Ovlp_tors_max_ANM=malloc(N_cart*sizeof(float));
+  float *Ovlp_cart_max_ANM=malloc(N_Cart*sizeof(float));
+  float *Ovlp_tors_max_ANM=malloc(N_Cart*sizeof(float));
   int *mode_cart_max_TNM=malloc(N_tors*sizeof(int));
   int *mode_tors_max_TNM=malloc(N_tors*sizeof(int));
-  int *mode_cart_max_ANM=malloc(N_cart*sizeof(int));
-  int *mode_tors_max_ANM=malloc(N_cart*sizeof(int));
+  int *mode_cart_max_ANM=malloc(N_Cart*sizeof(int));
+  int *mode_tors_max_ANM=malloc(N_Cart*sizeof(int));
 
   FILE *file_out; char outfile[200];
 
@@ -1740,24 +1739,24 @@ void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
     Ovlp_cart_max_TNM[i]=0;
     Ovlp_tors_max_TNM[i]=0;
   }
-  for(i=0; i<N_cart; i++){
+  for(i=0; i<N_Cart; i++){
     Ovlp_cart_max_ANM[i]=0;
     Ovlp_tors_max_ANM[i]=0;
   }
   // Normalize
   for(i=0; i<N_tors; i++){
-    Normalize_vector_weighted(Cart_mode_TNM[i], mass_coord, N_cart);
+    Normalize_vector_weighted(Cart_mode_TNM[i], mass_coord, N_Cart);
     Normalize_vector(Tors_mode_TNM[i], N_tors);
   }
-  for(i=0; i<N_cart; i++){
-    Normalize_vector_weighted(Cart_mode_ANM[i], mass_coord, N_cart);
+  for(i=0; i<N_Cart; i++){
+    Normalize_vector_weighted(Cart_mode_ANM[i], mass_coord, N_Cart);
     Normalize_vector(Tors_mode_ANM[i], N_tors);
   }
 
   for(ia=0; ia<N_tors; ia++){
     float *Ca=Cart_mode_TNM[ia];
-    for(i=0; i<N_cart; i++){
-      q=Scalar_product_weighted(Ca, Cart_mode_ANM[i], mass_coord, N_cart);
+    for(i=0; i<N_Cart; i++){
+      q=Scalar_product_weighted(Ca, Cart_mode_ANM[i], mass_coord, N_Cart);
       q*=q;
       if(q > Ovlp_cart_max_TNM[ia]){
 	Ovlp_cart_max_TNM[ia]=q; mode_cart_max_TNM[ia]=i;
@@ -1769,7 +1768,7 @@ void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
   }
   for(ia=0; ia<N_tors; ia++){
     float *Ta=Tors_mode_TNM[ia];
-    for(i=0; i<N_cart; i++){
+    for(i=0; i<N_Cart; i++){
       q=Scalar_product(Ta, Tors_mode_ANM[i],N_tors); q*=q;
       if(q > Ovlp_tors_max_TNM[ia]){
 	Ovlp_tors_max_TNM[ia]=q; mode_tors_max_TNM[ia]=i;
@@ -1796,14 +1795,14 @@ void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
 
   fprintf(file_out, "# Max. coeff Cartesian ANM - TNM modes\n");
   fprintf(file_out, "# ANM_mode  Max.coeff^2  TNM_mode\n");
-  for(i=0; i<N_cart; i++)
+  for(i=0; i<N_Cart; i++)
     fprintf(file_out, "%3d\t%.3f\t%3d\n",
 	    i, Ovlp_cart_max_ANM[i], mode_cart_max_ANM[i]);
   fprintf(file_out, "&\n");
 
   fprintf(file_out, "# Max. coeff Torsional ANM - TNM modes\n");
   fprintf(file_out, "# ANM_mode  Max.coeff^2  TNM_mode\n");
-  for(i=0; i<N_cart; i++)
+  for(i=0; i<N_Cart; i++)
     fprintf(file_out, "%3d\t%.3f\t%3d\n",
 	    i, Ovlp_tors_max_ANM[i], mode_tors_max_ANM[i]);
   fprintf(file_out, "&\n");
@@ -2019,8 +2018,8 @@ void Compute_force(struct Tors *Force, float *cc, struct Normal_Mode NM)
 {
   // Compute force from projection of conformation change on normal modes
   int i, a;
-  Force->Cart=malloc(NM.N_cart*sizeof(float));
-  for(i=0; i<NM.N_cart; i++)Force->Cart[i]=0;
+  Force->Cart=malloc(NM.N_Cart*sizeof(float));
+  for(i=0; i<NM.N_Cart; i++)Force->Cart[i]=0;
   Force->Tors=malloc(NM.N_axes*sizeof(float));
   Force->MW_Tors=malloc(NM.N_axes*sizeof(float));
   for(i=0; i<NM.N_axes; i++){Force->Tors[i]=0; Force->MW_Tors[i]=0;}
@@ -2029,7 +2028,7 @@ void Compute_force(struct Tors *Force, float *cc, struct Normal_Mode NM)
     if((NM.select[a]==0)||(NM.sigma2[a]==0))continue;
     float c=NM.omega2[a]*cc[a];
     float *x=NM.Cart[a], *u=NM.Tors[a], *w=NM.MW_Tors[a];
-    for(i=0; i<NM.N_cart; i++){Force->Cart[i]+=c*(*x); x++;}
+    for(i=0; i<NM.N_Cart; i++){Force->Cart[i]+=c*(*x); x++;}
     for(i=0; i<NM.N_axes; i++){
       Force->Tors[i]+=c*(*u); u++;
       Force->MW_Tors[i]+=c*(*w); w++;
@@ -2038,12 +2037,12 @@ void Compute_force(struct Tors *Force, float *cc, struct Normal_Mode NM)
 }
 
 void Cartesian_force(float *Cart_force, float *atom_diff,
-		     double **Hessian,int N_cart)
+		     double **Hessian,int N_Cart)
 {
   int i, j;
-  for(i=0; i<N_cart; i++){
+  for(i=0; i<N_Cart; i++){
     double sum=0;
-    for(j=0; j<N_cart; j++)sum+=Hessian[i][j]*atom_diff[j];
+    for(j=0; j<N_Cart; j++)sum+=Hessian[i][j]*atom_diff[j];
     Cart_force[i]=sum;
   }
 }
@@ -2053,33 +2052,33 @@ void Torsional_force(struct Tors Force, struct Tors *Diff, double **Hessian,
 		     float **Jacobian_ar, int N_int,
 		     struct interaction *Int_list, atom *atoms, int natoms)
 {
-  int N_cart=3*N_ref, i, j, a; double sum;
+  int N_Cart=3*N_ref, i, j, a; double sum;
   for(i=0; i<N_axes; i++){
     sum=0;
     for(j=0; j<N_axes; j++)sum += Hessian[i][j]*Diff->MW_Tors[j];
     Force.Tors[i]=sum;
   }
   // Cartesian force fr= HrJDelta_theta
-  float dr[N_cart];
-  for(i=0; i<N_cart; i++){
+  float dr[N_Cart];
+  for(i=0; i<N_Cart; i++){
     sum=0; for(a=0; a<N_axes; a++)sum+=Jacobian_ar[a][i]*Diff->Tors[a];
     dr[i]=sum;
   }
-  double **H=Allocate_mat2_d(N_cart, N_cart);
+  double **H=Allocate_mat2_d(N_Cart, N_Cart);
   Compute_Hessian_ANM(H,N_ref,atom_num,Int_list,N_int,atoms,natoms);
-  for(i=0; i<N_cart; i++){
-    sum=0; for(j=0; j<N_cart; j++)sum += H[i][j]*dr[j];
+  for(i=0; i<N_Cart; i++){
+    sum=0; for(j=0; j<N_Cart; j++)sum += H[i][j]*dr[j];
     Force.Cart[i]=sum;
   }
-  Empty_matrix_d(H, N_cart);
+  Empty_matrix_d(H, N_Cart);
 }
 
-float Compute_Max_dev(float *Cart_mode, float omega2, int N_cart,
-		      float *inv_sq_mass)
+float Compute_Max_dev(float *Cart_mode, float omega2, int N_Cart,
+		      float *mass_sqrt)
 {
   float Max_dev=0; int i;
-  for(i=0; i< N_cart; i++){
-    float x=fabs(Cart_mode[i])*inv_sq_mass[i];
+  for(i=0; i< N_Cart; i++){
+    float x=fabs(Cart_mode[i])*mass_sqrt[i]; //;
     if(x>Max_dev)Max_dev=x;
   }
   //return(3*Max_dev/sqrt(omega2));

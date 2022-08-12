@@ -15,10 +15,9 @@
 
 
 // Global variables
-float *EC, *eval, **evec, *w_ev;
-float Lambda, c1c2;
-int N;
-
+static float *EC, *eval, **evec, *w_ev;
+static float Lambda, c1c2;
+static int N;
 
 float C1sqr_over_C2(double **Corr, int N, int l);
 static int Find_zero_Newton(float *x0, float X_min, float X_max);
@@ -58,6 +57,14 @@ float *EC_profile(float *PE, double **Mat, int N_in, char *name)
   float *ci=CV_profile(Mat, N);
   double cv1=0, cv2=0; float *c=ci;
   for(i=0; i<N; i++){cv1+=*c; cv2+=(*c)*(*c); c++;}
+  if(isnan(cv1) || isnan(cv2) || cv2<=0){
+    printf("ERROR in Compute_EC, N= %d CV1= %.3g CV2= %.3g\n",N,cv1/N,cv2/N);
+    for(i=0; i<N; i++){
+      printf("%d %.3g  ", i, ci[i]);
+      for(j=0; j<N; j++){printf(" %.2g", Mat[i][j]);} printf("\n");
+    }
+    exit(8);
+  }
   free(ci);
   if(1){
     c1c2=(cv1*cv1)/(N*cv2);
@@ -65,6 +72,7 @@ float *EC_profile(float *PE, double **Mat, int N_in, char *name)
     // Choose variance such that the expected minimum component is zero
     double eps=1./(2*log((float)N)-log(6.283));
     c1c2=1./(1+eps);
+    printf("eps= %.3g c1c2= %.3g\n", eps, c1c2);
   }
   printf("<EC_i>^2/<EC_i^2>= %.3f\n", c1c2);
 

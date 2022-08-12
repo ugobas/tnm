@@ -1,3 +1,6 @@
+#ifndef __INI_COORD 
+#define __INI_COORD 
+
 // #define L_MAX 40000       /* Maximal length of a chain */
 
 #define CHMAX 800          // Maximum number of chains
@@ -138,11 +141,16 @@ struct chain{
   int *ali_seqres;
 };
 
+struct rigid{
+  int chain1, chain2;
+  int iaxe;
+};
+
 struct molecule{
   atom *atoms;
   int natoms;
   double *atom_str;
-  int N_ref, N_cart;
+  int N_ref, N_Cart;
   struct residue *seq;
   int nres;
   int N_diso;
@@ -164,19 +172,14 @@ struct ali_atoms{
   int *ali2;
   float *mass;
   int N_ref;
-  int N_cart;
+  int N_Cart;
 };
 
 #define FILE_MSG   "message.out"
-
-
-int Verbose;
-char cont_type;
-float cont_thr, cont_thr2;
-
 
 short **Compute_map(int N_res, struct residue *seq, int *N_cont);
 void Average_B(struct residue *seq, int N);
 int Is_atom_main(char *name, int seq_type);
 int Code_AA(char res);
-char *AA_code;
+
+#endif

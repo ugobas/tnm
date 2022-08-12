@@ -1,13 +1,33 @@
 #define PRG "tnm"
 int LABEL=0; // Print model parameters in file name?
 
+char DOF_LABEL[30];
+// Free energy variables global
+double G_NM_holo=0;
+double DG_NM_internal=0;
+double DG_NM_rigid=0;
+double E_cont_bind=0;
+int N_rigid_inter;
+
 /********** Some of these parameters are not set from input file **********/
-// Fit of B factors
-float KAPPA_DEF=218.4; // Force const. for parameters C=4.5 E=6 if B not fitted
+// Force constant
+//float KAPPA_DEF=218.4; // Force const. if B not fitted
+float KAPPA_DEF_PHI=5; //15; // Force const. if B not fitted
+float KAPPA_DEF_PHIPSI=8.2;  //24.5; // Force const. if B not fit
+float KAPPA_DEF_OMEGA=15;   // 69.2; // Force const. if B not fit
+float KAPPA_DEF_SCHAIN=14;  //42.1; // Force const. if B not fit
+// In all above cases, C=4.5 E=6 K_PHI=K_PSI=K_OM=K_SCH=0.2 T=293K r0=3.5A
+
+float TEMPERATURE=-1;
+float Temp_comp=-1;
+float KAPPA_DEF;
+float TEMP_DEF=293;
+float Freq_unit=0.156; // internal units in units of ps^(-1)
 
 // Selection of modes
 #define COLL_THR_DEF 30   
 float COLL_THR= COLL_THR_DEF;  // Select mode if exp(-S_cart) > COLL_THR
+double E_THR;
 // E_MIN
 
 // Analysis of conformation change
@@ -16,7 +36,7 @@ int MIN_ALI_LEN_DEF=20; // Chains are aligned if L>MIN_ALI_LEN, if not peptides
 float RMSD_MAX=100;   // max. RMSD for analyzing conformation change
 float RMSD_MIN=0.5;   // min. RMSD for analyzing conformation change
 #define RMSD_THR_DEF 0.1  // If confchange projections smaller, discard
-#define SEQID_THR_DEF 50  // If Seq.Id<THR, align structures with Mammoth
+#define SEQID_THR_DEF 0.3  // If Seq.Id<THR, align structures with Mammoth
 int NMUT=-2; /* Mutations between the two proteins required for analysis.
 		NMUT=-2: No analysis. NMUT=-1: Always analysis.
 		NMUT=0: Sequences must be identical.
@@ -36,7 +56,6 @@ float s0=0.07;       // Entropy per residue, used for simulations
 // Analysis performed
 int ANHARMONIC=0;
 int SITE_DYNAMICS=0; // Examine dynamics of binding sites
-
 
 // Output
 #define PRINT_PDB_DEF 1
@@ -67,14 +86,13 @@ char SITES[100]="";
 #define THR_ALL 4.5        // For ALL and MIN atoms contacts
 #define EXP_HESSIAN_DEF 6  // force constant ~ r^(-EXP_HESSIAN)
 #define POW_DEF 1          // Power-law or exponential decay of force constant?
-#define K_OMEGA_DEF 0.5      // Force constant for omega torsions
+#define K_OMEGA_DEF 0.5    // Force constant for omega torsions
 #define K_PSI_DEF 0.2      // Force constant for psi torsions
 #define K_PHI_DEF 0.2      // Force constant for phi torsions
 #define K_CHI_DEF 0.4      // Force constant for chi torsions
 #define K_BA_DEF 0.5       // Force constant for bond angles
 #define K_BL_DEF 0.5       // Force constant for bond length
 #define MIN_INT_DEF 1      // Freeze unconstrained degrees of freedom
-
 
 // Elastic constants defined in nma_para.h
 
@@ -120,11 +138,85 @@ char SITES[100]="";
 
 // Global variables
 double mass_sum=0;
+double nbtops = CLOCKS_PER_SEC;
+
+// External variables
+char *AA_code;
+int HYD=0;
+int HYD_REF=0;
+
+// atoms
+int num_BB=5; //=5
+char BB_name[8][3]; // N CA C CB O
+//                       C-N    N-CA   CA-C   CA-CB  C-O  
+float BB_length[8]; //={1.3301,1.4572,1.5236,1.5319,1.2316};
+//                    CA-C-N C-N-CA N-CA-C N-CA-CB CA-C-O  
+float BB_angle[8]; //={1.1091,1.0196,1.2018,1.2162,1.0359};
+
+// Computation of native interactions and force constant in
+// interactions_tnm.c and anharmonic_tnm.c
+// k_ij = KAPPA*(r_ij/C0)^-EXP_HESSIAN if r<C1 0 if r>=C_THR (if POW)
+int POW=1;      // Power law (1) or exponential (0)?
+float C_THR=0;  // Threshold for contacts
+float EXP_HESSIAN=0; 
+float C1_THR=0; // Start of interpolation region
+float C0=0;     // Reference distance for force constant
+float KAPPA=0;  // Force constant at r=C0
+double K0=0; // K0=KAPPA*C0^EXP;
+double K1=0; // K1=K0*C1^-EXP/(C_THR-C1);
+double K_OMEGA=0, K_PSI=0, K_PHI=0, K_CHI=0, K_BA=0, K_BL=0;
+// Force constants for internal variables
+int D_omega_thr=0; // Omega unfrozen if D_omega>D_omega_thr
+
+// Fit of B factors
+int FIT_B=0;
+float R_MIN=0;     // Minimum correlation above which B-factors are fitted
+float SLOPE_MIN=0; // Minimum slope above which B-factors are fitted
+float RMSD_EXP=0;
+
+// Energy function
+float **Econt; 
+float lambda=0;
+float E_repulsion=0;
+float D_Res[20][20], U_Res[20][20];
+float ENE_HB=2.0; // Ratio between HB interactions and other types
+float DA_THR=3.5; // Max donor-acceptor dist in h bond
+float COS_DAA=-0.008;   // Max cos(A'AD) (min. 105 degrees)
+float THR_NO=4;   // Threshold for NO interactions
+int S_TYPE=0;        // Type of shadow interaction
+int ONEINT=0;        // Only one interaction per atom vs. residue
+float S_THR=0;       // Screening parameter
+int HNM=0;           // Calpha interactions with Hissen parameters
+int NOCOV=0;         // Covalent neighbors do not interact
+int N_RESRES=0;      // Number of interactions retained for each residue pair
+
+// General
+char REF[20];      // Reference atoms
+int N_MODES=0;
+float E_MIN=0;  // Minimum eigenvalue allowed for normal modes
+int KINETIC=1;      // Considering kinetic energy in tnm model
+
+// Input
+int L_MAX;
+int MIN_ALI_LEN;  // Chains are aligned if L>MIN_ALI_LEN, if not peptides
 
 
-extern float Fit_fluctuations(double *mass_sum, float *B_TNM,
-			      float *RMSD_NM, char *out, int anharmonic,
-			      struct Normal_Mode NM,
+// Output
+int Verbose=0;
+int PRINT_LAMBDA=0; // Printing list of eigenvalues
+int ANISOU=0;     // Examine anisotropic temperature factors?
+int PRINT_AXES=0;
+int N_PDB_print=0;
+int PRINT_PDB_ANHARM=0;
+char REF_CC[5];
+
+// Other
+float sqrarg=0;
+
+extern float Fit_fluctuations(int FIT_B, float *B_TNM,
+			      float *RMSD_NM, char *out,
+			      float *Temp_comp, float TEMPERATURE,
+			      int anharmonic, struct Normal_Mode NM,
 			      struct Reference Ref_kin, char *REF,
 			      struct residue *seq1, int nres1, int nmr1,
 			      atom *atoms1, char *nameout1,
@@ -149,17 +241,35 @@ void Clean_memory(struct Normal_Mode NM,
 
 /***************************  Printing  *********************************/
 
-void Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
-		   struct Normal_Mode NM, char *out_B1, char *out_B2,
-		   float Tors_fluct,struct axe *axes, int N_axes, int N_main,
-		   int Nskip, int N_atoms, int N_res, int N_diso, int N_int,
-		   int N_inter, float Cont_overlap,
-		   int N_disc_coll, int N_disc_freq, int N_disc_out,
-		   float mass_sum);
-void Print_thermal(int anharmonic, FILE *file_out,
-		   struct Normal_Mode NM, char *out_B,
-		   struct axe *axes, int N_main, int N_res, int Nchain);
-
+double Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
+		     struct Normal_Mode NM, char *out_B1, char *out_B2,
+		     float Tors_fluct,struct axe *axes, int N_axes, int N_main,
+		     int Nskip, int N_atoms, int N_res, int N_diso, int N_int,
+		     int N_inter, float Cont_overlap,
+		     int N_disc_coll, int N_disc_freq, int N_disc_out,
+		     float mass_sum,
+		     struct Normal_Mode NM_unfold,
+		     int N_int_unfold, double E_cont_unfold, int FOLDING,
+		     struct Normal_Mode NM_apo, int N_int_inter,
+		     double E_cont_holo, double E_cont_bind,
+		     int BINDING,
+		     float *mass_coord, int *Cart_interface, int N_Cart_inter,
+		     int *rigid_inter, int N_rigid);
+double Print_thermal(int anharmonic, FILE *file_out,
+		     struct Normal_Mode NM, char *out_B,
+		     struct axe *axes, int N_main, int N_res, int Nchain,
+		     struct Normal_Mode NM_unfold,
+		     int N_int_unfold, int N_int,
+		     double E_cont_unfold, int FOLDING,
+		     struct Normal_Mode NM_apo, int N_int_inter,
+		     double E_cont_bind, int BINDING,
+		     float *mass_coord, int *Cart_interface, int N_Cart_inter,
+		     int *rigid_inter, int N_rigid);
+double Compute_entropy(double *Free_Ene, double *Free_Ene_rigid,
+		       struct Normal_Mode NM, float *sigma2,
+		       double beta_omega, float *mass_coord,
+		       int *Cart_interface, int N_Cart_inter,
+		       int *rigid_inter, int N_rigid);
 
 /*****************************  Input  *********************************/
 int getArgs(int argc, char **argv,
@@ -194,7 +304,8 @@ int getArgs(int argc, char **argv,
 	    int *ALL_PAIRS, float *SIGMA,
 	    int *STRAIN, char *SITES,
 	    int *PRINT_CMAT, int *ANHARMONIC,
-	    int *PRINT_PDB_ANHARM, int *N_PDB_print);
+	    int *PRINT_PDB_ANHARM, int *N_PDB_print,
+	    int *FOLDING, int *BINDING, int *n_apo, char *apo_chains);
 
 int Read_para(char *filename,
 	      char *file_pdb1, char *chain1,
@@ -227,7 +338,9 @@ int Read_para(char *filename,
 	      int *ALL_PAIRS, float *SIGMA,
 	      int *STRAIN, char *SITES,
 	      int *PRINT_CMAT, int *ANHARMONIC,
-	      int *PRINT_PDB_ANHARM, int *N_PDB_print);
+	      int *PRINT_PDB_ANHARM, int *N_PDB_print,
+	      int *FOLDING,
+	      int *BINDING, int *n_apo, char *apo_chains);
 void help (void);
 
 /******************************* Computations ****************************/
@@ -235,10 +348,39 @@ int Torsional_Hessian(double **Hessian, int N_modes,
 		      struct axe *axe,
 		      float K_OMEGA, float K_PSI, float K_PHI, float K_CHI,
 		      float K_BA, float K_BL);
-int Relevant_modes(float *sigma2, int *select, int N, float N_atoms);
-double Rescale_force(struct Normal_Mode NM,
-		     struct interaction *Int_list, int N_int,
-		     float kappa, int anharmonic);
+double Rescale_Hessian(struct Normal_Mode NM,
+		       struct interaction *Int_list, int N_int,
+		       float kappa, int anharmonic);
+void Rescale_para(float kappa);
+
+void Get_modes_tors(struct Normal_Mode NM, int N_modes,
+		    double **Hessian, struct Jacobian J,
+		    struct axe *axe1, int naxe1,
+		    struct Reference Ref_kin, atom *atoms1);
+void Get_modes_Cart(struct Normal_Mode NM, int N_modes,
+		    double **Hessian, struct Jacobian J,
+		    struct axe *axe1, int naxe1, struct Reference Ref_kin);
+int Compute_sigma2(int *N_disc_freq, int *N_disc_out, struct Normal_Mode NM,
+		   float *mass_sqrt, int naxe1, int N_cart,
+		   float COLL_THR);
+struct interaction *Apo_interactions(int *N_int_apo,
+				     struct interaction **Int_list_inter,
+				     int *N_int_inter,
+				     struct interaction *Int_list, int N_int,
+				     atom *atoms,int *apo_chain_num,
+				     int n_apo, int Nchain);
+struct interaction *Unfold_interactions(int *N_int_unfold,
+					struct interaction *Int_list,
+					int N_int, atom *atoms);
+int N_res_1=0, N_res_2=0, N_cont_1=0, N_cont_2=0;
+int Get_interface(int *Cart_interface,
+		  struct interaction *Int_list, int N_int,
+		  atom *atoms, int *apo_chain_num,
+		  int n_apo, struct chain *chains, int Nchain,
+		  int *atom_num, int N_ref, int natoms, int nres);
+int Get_chain_num(int *apo_chain_num, char *apo_chains, int n_apo,
+		  struct chain *chains, int Nchain);
+int Belong_to_apo(int chain, int *apo_chain_num, int n_apo);
 
 extern void Binding_site_dynamics(struct Normal_Mode NM, struct Reference Ref,
 				  struct residue *seq, atom *atoms,
@@ -283,7 +425,7 @@ int main(int argc , char *argv[]){
   int ANISOU1=0;
   int nres1=0, nmr1=0, natoms1=0;
   atom *atoms1=NULL;
-  char  file_pdb1[150], chain1[CHMAX], pdbid1[100], nameprot1[100];
+  char  file_pdb1[150], chain1[CHMAX], pdbid1[100];
   struct residue *seq1;
   float *coord_1=NULL;
   struct axe *axe1=NULL;
@@ -305,7 +447,7 @@ int main(int argc , char *argv[]){
   int ANISOU2=0, nmr2=0;
   int N_diso2=0; // Number of disordered axis for protein 2
   atom *atoms2=NULL;
-  char  file_pdb2[150], chain2[CHMAX], pdbid2[100], nameprot2[100];
+  char  file_pdb2[150], chain2[CHMAX], pdbid2[100];
   struct residue *seq2;
   float *coord_2=NULL;
   struct chain *chains2=NULL;
@@ -319,7 +461,7 @@ int main(int argc , char *argv[]){
   struct Ali_score ali;
   double rmsd=0.0;
   struct Para_confchange Para_confchange;
-  float SEQID_THR=50;
+  float SEQID_THR=SEQID_THR_DEF;
 
   // Input force
   char *FILE_FORCE=NULL;
@@ -350,13 +492,14 @@ int main(int argc , char *argv[]){
   int i,ia,k;
 
   // time
-  double nbtops = CLOCKS_PER_SEC, t0=clock();
+  double t0=clock();
 
   // File names
   #define NCH 150
-  char outdir[NCH]="", nameout1[NCH]="", summary1[NCH]=""; //directory[150],
-  char fullmodel[NCH]="", MODEL[80]="";
-  char name2[NCH]="", nameout2[NCH]="", summary2[NCH]="";
+  char outdir[50]="", nameout1[300]="", summary1[400]=""; //directory[150],
+  char fullmodel[100]="", MODEL[80]="";
+  char name2[201]="", nameout2[300]="", summary2[400]="";
+  char nameprot1[100], nameprot2[100];
   char parameters[1000]="";
 
   /*****************************  INPUT  **********************************/
@@ -365,6 +508,11 @@ int main(int argc , char *argv[]){
   int PRINT_PDB= PRINT_PDB_DEF;
   int PRINT_MODE_SUMM=PRINT_MODE_SUMM_DEF;
 
+  /***************** Binding free energy ********************************/
+  int BINDING=0, n_apo=1; char apo_chains[100]; 
+  /**************** Unfolding entropy ***********************************/
+  int FOLDING=0;
+
   outdir[0]='\0';
   ALL_AXES=1;
   KINETIC=1;
@@ -372,7 +520,6 @@ int main(int argc , char *argv[]){
   ONEINT=1;
   N_RESRES=1;
   HYD=0; HYD_REF=0; // Read hydrogen atoms or not?
-  KAPPA=KAPPA_DEF;
   FIT_B=1; R_MIN=0; SLOPE_MIN=0.00; RMSD_EXP=0.5;
   K_OMEGA=K_OMEGA_DEF; K_PSI=K_PSI_DEF; K_PHI=K_PHI_DEF;
   K_CHI=K_CHI_DEF; K_BA=K_BA_DEF; K_BL=K_BL_DEF;
@@ -389,11 +536,61 @@ int main(int argc , char *argv[]){
 	  &PRINT_COV_COUPLING, &PRINT_DEF_COUPLING,
 	  &PRINT_DIR_COUPLING, &PRINT_COORD_COUPLING,
 	  &PRINT_SIGMA_DIJ, &PROF_TYPE, &ALL_PAIRS, &SIGMA, &STRAIN, SITES,
-	  &PRINT_CMAT, &ANHARMONIC, &PRINT_PDB_ANHARM, &N_PDB_print);
+	  &PRINT_CMAT, &ANHARMONIC, &PRINT_PDB_ANHARM, &N_PDB_print,
+	  &FOLDING, &BINDING, &n_apo, apo_chains);
   MIN_INT_MAIN=MIN_INT_SIDE;
+  if(BINDING){
+    if(ALLOSTERY==0){
+      printf("WARNING, dynamical couplings are needed for "
+	     "estimating binding affinity, setting it.\n");
+    }
+    ALLOSTERY=1; //PRINT_DEF_COUPLING=1;
+    PRINT_DIR_COUPLING=1; PRINT_COORD_COUPLING=1;
+    if(FIT_B==0 && KAPPA){
+      printf("WARNING, Binding computation required without FITB, setting "
+	     "KAPPA to default\n"); KAPPA=0;
+    }
+  }
+  if(FOLDING){
+    if(FIT_B){
+      printf("WARNING, Unfolding computation required without FITB, setting "
+	     "it to zero\n"); FIT_B=0;
+    }
+    if(KAPPA){
+      printf("WARNING, Unfolding computation required without FITB, setting "
+	     "KAPPA to default\n"); KAPPA=0;
+    }
+  }
+
+  sprintf(DOF_LABEL,"PHI");
+  if(PSI)strcat(DOF_LABEL, "PSI");
+  if(OMEGA>0)strcat(DOF_LABEL, "OME");
+  if(OMEGA<0)strcat(DOF_LABEL, "CISTR");
+  if(SIDECHAINS)strcat(DOF_LABEL, "SCH");
+
   // Rescale torsion springs
+  if(PSI==0 && OMEGA==0 && SIDECHAINS==0){
+    KAPPA_DEF=KAPPA_DEF_PHI; 
+  }else if(PSI && OMEGA==0 && SIDECHAINS==0){
+    KAPPA_DEF=KAPPA_DEF_PHIPSI;
+  }else if(PSI && OMEGA && SIDECHAINS==0){
+    KAPPA_DEF=KAPPA_DEF_OMEGA;
+  }else if(PSI && OMEGA && SIDECHAINS){
+    KAPPA_DEF=KAPPA_DEF_SCHAIN;
+  }else{
+    printf("ERROR, not recommended set of degrees of freedom\n");
+    printf("PSI= %d OMEGA= %d SIDECHAINS= %d\n",
+	   PSI,OMEGA,SIDECHAINS); exit(8);
+  }
+  if(KAPPA==0){
+    KAPPA=KAPPA_DEF;
+    printf("Setting KAPPA to default %.4g\n", KAPPA);
+  }
+
+  /*char tmp[20]; sprintf(tmp, " KAPPA=%.1f", KAPPA);
+    strcat(parameters,tmp);
   K_PSI*=KAPPA; K_PHI*=KAPPA; K_OMEGA*=KAPPA; K_CHI*=KAPPA;
-  K_BA*=KAPPA; K_BL*=KAPPA;
+  K_BA*=KAPPA; K_BL*=KAPPA;*/
 
   // Control parameters
   if(HNM){
@@ -466,7 +663,7 @@ int main(int argc , char *argv[]){
   /* Read protein structure 1*/
   Read_PDB(&nres1, &seq1, &n_lig1, &ligres1, chain1, &ANISOU1, &nmr1,
 	   &natoms1, &atoms1, &na_lig1, &ligatom1, &chains1, &Nchain1,
-	   pdbid1, file_pdb1);
+	   &TEMPERATURE, pdbid1, file_pdb1);
   Nchain=Nchain1;
   // Collectivity
   //if(COLL_THR > natoms1*0.15)COLL_THR = natoms1*0.15;
@@ -482,10 +679,10 @@ int main(int argc , char *argv[]){
     printf("\n************************************************\n");
     printf("*********** Read/align structure 2 *************\n");
     printf("************************************************\n\n");
-    
+    float TEMP2;
     Read_PDB(&nres2, &seq2, &n_lig2, &ligres2, chain2, &ANISOU2,
 	     &nmr2, &natoms2, &atoms2, &na_lig2, &ligatom2,
-	     &chains2, &Nchain2, pdbid2, file_pdb2);
+	     &chains2, &Nchain2, &TEMP2, pdbid2, file_pdb2);
     if(nres2<=0){
       printf("WARNING, no residues found in file %s\n", file_pdb2);
       printf("Performing single structure computation\n");
@@ -547,7 +744,7 @@ int main(int argc , char *argv[]){
   /*************  Reference atoms for kinetic energy  ***********************/
   struct Reference Ref_kin;
   int N_ref=Set_reference(&Ref_kin, 0, REF, atoms1, 0, natoms1);
-  int N_cart=3*N_ref;
+  int N_Cart=3*N_ref;
   // Check that reference atoms exist
   if((natoms1==0)||(N_ref==0)){
     printf("ERROR, no atoms found in file %s", file_pdb1);
@@ -555,6 +752,15 @@ int main(int argc , char *argv[]){
     exit(8);
   }
   printf("%d reference atoms\n", N_ref);
+  // Mass of the protein
+  mass_sum=Ref_kin.mass_sum;
+
+  {
+    char tmp[20]; sprintf(tmp, " KAPPA=%.1f", KAPPA);
+    strcat(parameters,tmp);
+    K_PSI*=KAPPA; K_PHI*=KAPPA; K_OMEGA*=KAPPA; K_CHI*=KAPPA;
+    K_BA*=KAPPA; K_BL*=KAPPA;
+  }
 
   printf("\n************************************************\n");
   printf("*********** Center coordinates *****************\n");
@@ -571,67 +777,75 @@ int main(int argc , char *argv[]){
   printf("************************************************\n\n");
 
   /************************  Output files ***************************/
+  char tmp[120];
   sprintf(nameprot1, "%s", pdbid1);
   for(i=0; i<Nchain; i++){
-    if((chains1[i].label!=' ')&&(chains1[i].label!='\0'))
-      sprintf(nameprot1, "%s%c", nameprot1, chains1[i].label);
+    if((chains1[i].label!=' ')&&(chains1[i].label!='\0')){
+      sprintf(tmp, "%c", chains1[i].label);
+      strcat(nameprot1, tmp);
+    }
   }
   strcpy(nameout1, nameprot1);
 
   if(strncmp(INT_TYPE, "SCR", 3)==0){
     if(ONEINT==0){
-      sprintf(fullmodel, "%s_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
     }else{
-      sprintf(fullmodel, "%s_MIN_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_MIN_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
     }
   }else if(strncmp(INT_TYPE, "SHA", 3)==0){
     if(ONEINT==0){
-      sprintf(fullmodel, "%s_%d_d%.2f_t%.1f", INT_TYPE, S_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_%d_d%.2f_t%.1f", INT_TYPE, S_TYPE, S_THR, C_THR);
     }else{
-      sprintf(fullmodel, "%s_MIN_%d_d%.2f_t%.1f",
-	      INT_TYPE, S_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_MIN_%d_d%.2f_t%.1f",INT_TYPE, S_TYPE, S_THR, C_THR);
     }
   }else if((strncmp(INT_TYPE, "MIN", 3)==0)&&(N_RESRES>1)){
-    sprintf(fullmodel, "%s%.1f_M%d", INT_TYPE, C_THR, N_RESRES);
+    sprintf(tmp, "%s%.1f_M%d", INT_TYPE, C_THR, N_RESRES);	      
   }else{
-    sprintf(fullmodel, "%s%.1f", INT_TYPE, C_THR);
+    sprintf(tmp, "%s%.1f", INT_TYPE, C_THR);
   }
-  sprintf(fullmodel, "%s_%s", fullmodel, REF);
-  sprintf(fullmodel, "%s_PHI", fullmodel);
-  if(PSI)sprintf(fullmodel, "%sPSI", fullmodel);
-  if(OMEGA)sprintf(fullmodel, "%sOME", fullmodel);
-  if(OMEGA<0)sprintf(fullmodel, "%sCISTR", fullmodel);
-  if(SIDECHAINS)sprintf(fullmodel, "%sSCH", fullmodel);
-  if(LABEL)sprintf(nameout1,  "%s_%s", nameout1, fullmodel);
+  strcat(fullmodel, tmp);
+
+  strcat(fullmodel,"_"); strcat(fullmodel,REF);
+  strcat(fullmodel,"_"); strcat(fullmodel,DOF_LABEL);
+  if(PSI)strcat(fullmodel, "PSI");
+  if(OMEGA)strcat(fullmodel, "OME");
+  if(OMEGA<0)strcat(fullmodel, "CISTR");
+  if(SIDECHAINS)strcat(fullmodel, "SCH");
+  if(LABEL){strcat(nameout1,"_"); strcat(nameout1,fullmodel);}
   // UUU: Restore the option of the full name
 
   sprintf(summary1, "%s.summary.dat", nameout1);   
   if(Check_make_dir(outdir)){
-    sprintf(summary1, "%s/%s", outdir, summary1);
-    sprintf(nameout1,  "%s/%s", outdir, nameout1);
+    char tmp2[400]; sprintf(tmp2, "%s", summary1);
+    sprintf(summary1, "%s/", outdir); strcat(summary1, tmp2);
+    sprintf(tmp2, "%s", nameout1);
+    sprintf(nameout1, "%s/", outdir); strcat(nameout1, tmp2);
   }
-
   printf("output file (nameout1): %s\n",nameout1);
   printf("output file (summary1): %s\n",summary1);
 
   if(CONF_CHANGE){
     sprintf(nameprot2, "%s", pdbid2);
     for(i=0; i<Nchain; i++){
-      if((chains2[i].label!=' ')&&(chains2[i].label!='\0'))
-	sprintf(nameprot2, "%s%c", nameprot2, chains2[i].label);
+      if((chains2[i].label!=' ')&&(chains2[i].label!='\0')){
+	sprintf(tmp, "%c", chains2[i].label);
+	strcat(nameprot2, tmp);
+      }
     }
-    sprintf(name2, "%s_%s", nameprot1, nameprot2);
+    //sprintf(name2, "%s_%s", nameprot1, nameprot2);
     //sprintf(name2, "%s-%s", nameprot1, nameprot2);
     //sprintf(name2, "%s_%s", pdbid1, pdbid2); // YYY don't write chain names 
 
-
     sprintf(nameout2, "%s_%s", nameprot1, nameprot2); 
-    if(LABEL)sprintf(nameout2, "%s_%s", nameout2, fullmodel);
+    if(LABEL){strcat(nameout2,"_"); strcat(nameout2, fullmodel);}
 
     sprintf(summary2, "%s.summary.dat", nameout2);
     if(Check_make_dir(outdir)){
-      sprintf(summary2, "%s/%s", outdir, summary2);
-      sprintf(nameout2, "%s/%s", outdir, nameout2);
+      char tmp2[400]; sprintf(tmp2, "%s", summary2);
+      sprintf(summary2, "%s/", outdir); strcat(summary2, tmp2);
+      sprintf(tmp2, "%s", nameout2);
+      sprintf(nameout2, "%s/", outdir); strcat(nameout2, tmp2);
     }
     printf("output file (nameout2): %s\n",nameout2);
     printf("output file (summary2): %s\n",summary2);
@@ -658,13 +872,13 @@ int main(int argc , char *argv[]){
     int N_ali=Align_references(&ali_atoms, Ref1, atoms1);
     printf("%d ref. atoms for conf. change, aligned: %d\n",Ref1.N_ref, N_ali);
     // Compute RMSD
-    int N_cart=ali_atoms.N_cart;
-    coord_1=malloc(N_cart*sizeof(float));
+    int N_Cart=ali_atoms.N_Cart;
+    coord_1=malloc(N_Cart*sizeof(float));
     Write_ref_coord_atom(coord_1, N_ali, atoms1, ali_atoms.ali1);
-    coord_2=malloc(N_cart*sizeof(float));
+    coord_2=malloc(N_Cart*sizeof(float));
     Write_ref_coord_atom(coord_2, N_ali, atoms2, ali_atoms.ali2);
     float rmsd=RMSD_CA(coord_1, coord_2, Ref1, atoms1, nres1, ali_atoms);
-    printf("RMSD_CA(%s,%s)=%.2f\n", pdbid1, pdbid2, rmsd);
+    printf("RMSD_CA(%s,%s)= %.2f\n", pdbid1, pdbid2, rmsd);
     if((rmsd < RMSD_MIN)||(rmsd > RMSD_MAX)){
       printf("Too small RMSD, exiting the program ");
       printf("allowed: %.2f-%.2f\n", RMSD_MIN, RMSD_MAX);
@@ -697,6 +911,7 @@ int main(int argc , char *argv[]){
   struct interaction *Int_list; 
   Compute_interactions(&N_int, &Int_list, INT_TYPE,
 		       atoms1, natoms1, nres1, nameprot1);
+
   if(PRINT_CMAT){
     printf("Printing contact matrix\n");
     Print_contact_matrix(Int_list,N_int,atoms1,seq1,fullmodel,nameprot1);
@@ -732,8 +947,9 @@ int main(int argc , char *argv[]){
   printf("************************************************\n\n");
   
   /***********************  Degrees of freedom ************************/
-  axe1=Set_DegofFreed(&naxe1, &nmain, &nskip, &N_diso1, bonds,
-		      atoms1, natoms1, Ref_kin.atom_num, N_ref,
+  struct rigid *Rigid_dof=NULL; int N_rigid=0;
+  axe1=Set_DegofFreed(&naxe1, &nmain, &nskip, &N_diso1, &Rigid_dof, &N_rigid,
+		      bonds, atoms1, natoms1, Ref_kin.atom_num, N_ref,
 		      seq1, last_ali_res, chains1, Nchain,
 		      Int_list, N_int, MIN_INT_MAIN, MIN_INT_SIDE,
 		      OMEGA, SIDECHAINS, PSI);
@@ -754,12 +970,80 @@ int main(int argc , char *argv[]){
 
   /************************ Prepare memory ***************************/
   int N_modes;
-  if(ANM){N_modes=N_cart;}else{N_modes=naxe1;}
-  Allocate_memory(&NM, &J, &Hessian, naxe1, N_ref, N_cart, N_modes, nres1);
+  if(ANM){N_modes=N_Cart;}else{N_modes=naxe1;}
+  Allocate_memory(&NM, &J, &Hessian, naxe1, N_ref, N_Cart, N_modes, nres1);
+
+
+  // Unfolding entropy
+  struct Normal_Mode NM_unfold; double **Hessian_unfold=NULL;
+  struct interaction *Int_list_unfold=NULL; int N_int_unfold=0;
+  double E_cont_holo=Contact_energy(Int_list, N_int, seq1), E_cont_unfold=0;
+  if(FOLDING){
+    Int_list_unfold=Unfold_interactions(&N_int_unfold, Int_list, N_int,atoms1);
+    E_cont_unfold= Contact_energy(Int_list_unfold, N_int_unfold, seq1);
+    printf("Found %d contacts in folded and %d in unfolded str.\n",
+	   N_int,  N_int_unfold);
+    printf("Contact energy: %.3g (folded) %.3g (unfolded)\n",
+	   E_cont_holo, E_cont_unfold);
+    Allocate_Normal_modes(&NM_unfold, N_modes, naxe1, N_Cart);
+    NM_unfold.ANM=ANM; NM_unfold.N=N_modes;
+    Hessian_unfold=Allocate_mat2_d(N_modes, N_modes);
+  }
+
+  // Interface
+  double E_cont_apo;
+  struct Normal_Mode NM_apo; double **Hessian_apo=NULL;
+  struct interaction *Int_list_apo=NULL; int N_int_apo=0;
+  struct interaction *Int_list_inter=NULL; int N_int_inter=0;
+  int Cart_interface[N_Cart], N_Cart_inter=0;
+  int rigid_inter[N_rigid]; for(i=0; i<N_rigid; i++)rigid_inter[i]=-1;
+  if(BINDING){
+    if(Nchain1<=n_apo){
+      printf("WARNING, you requested to compute the binding free energy "
+	     "of %d chains with the others but we found only %d chains\n",
+	     n_apo, Nchain1); BINDING=0; goto No_bind;
+    }
+    int apo_chain_num[n_apo];
+    if(Get_chain_num(apo_chain_num, apo_chains, n_apo, chains1, Nchain1)){
+      Int_list_apo=Apo_interactions(&N_int_apo, &Int_list_inter, &N_int_inter,
+				    Int_list,N_int,
+				    atoms1,apo_chain_num,n_apo,Nchain1);
+      N_Cart_inter=Get_interface(Cart_interface, Int_list,N_int,
+				 atoms1,apo_chain_num,n_apo,chains1,Nchain1,
+				 Ref_kin.atom_num, N_ref, natoms1, nres1);
+      N_rigid_inter=0;
+      for(i=0; i<N_rigid; i++){
+	int apo1=Belong_to_apo(Rigid_dof[i].chain1, apo_chain_num, n_apo);
+	int apo2=Belong_to_apo(Rigid_dof[i].chain2, apo_chain_num, n_apo);
+	if(apo1 != apo2){rigid_inter[i]=Rigid_dof[i].iaxe; N_rigid_inter++;}
+      }
+
+      if(N_int_apo==N_int){
+	printf("WARNING, no contacts found between %s and the other chains\n"
+	       "I cannot compute binding free energy\n",
+	       apo_chains);
+	BINDING=0; goto No_bind;
+      }
+      Allocate_Normal_modes(&NM_apo, N_modes, naxe1, N_Cart);
+      NM_apo.ANM=ANM; NM_apo.N=N_modes;
+      Hessian_apo=Allocate_mat2_d(N_modes, N_modes);
+      E_cont_apo= Contact_energy(Int_list_apo, N_int_apo, seq1);
+      E_cont_bind=E_cont_holo-E_cont_apo; //N_int_inter=N_int-N_int_apo;
+      printf("Found %d contacts in holo str. and %d in apo str.\n",
+	      N_int,  N_int_apo);
+      printf("Contact energy: %.3g (holo) %.3g (apo) %.3g (bind)\n",
+	     E_cont_holo, E_cont_apo, E_cont_bind);
+      printf("Computing binding free energy with normal modes\n");
+    }else{
+      printf("WARNING, not all chains in %s were found in PDB file. "
+	     "I cannot perform binding free energy computation\n",
+	     apo_chains); BINDING=0;
+    }
+  }
+ No_bind:
   printf("Memory allocated\n");
 
-
-   printf("\n************************************************\n");
+  printf("\n************************************************\n");
   printf("*********** ENM kinetic en, Eckart cdt *********\n");
   printf("************************************************\n\n");
 
@@ -767,7 +1051,9 @@ int main(int argc , char *argv[]){
   /********* Eckart conditions, Jacobian, Kinetic energy  ************/
   J.N_kin=
     Compute_kinetic(&J, axe1, naxe1, atoms1, natoms1, Ref_kin, 1);
-  if((ANM==0)&&(KINETIC)){N_modes=J.N_kin; NM.N=N_modes;}
+  if((ANM==0)&&(KINETIC)){
+    N_modes=J.N_kin; NM.N=N_modes; NM_apo.N=N_modes; NM_unfold.N=N_modes;
+  }
   printf("Kinetic energy computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
   t0=clock();
 
@@ -786,7 +1072,7 @@ int main(int argc , char *argv[]){
   }
 
 
-   printf("\n************************************************\n");
+  printf("\n************************************************\n");
   printf("*********** ENM Hessian / normal modes  ********\n");
   printf("************************************************\n\n");
 
@@ -798,28 +1084,37 @@ int main(int argc , char *argv[]){
 			atoms1, natoms1, axe1, nmain, naxe1, N_modes,
 			chains1, Nchain, KINETIC,
 			K_OMEGA, K_PSI, K_PHI, K_CHI, K_BA, K_BL);
-
     printf("Hessian computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
     t0=clock();
+    Get_modes_tors(NM, N_modes, Hessian, J, axe1, naxe1, Ref_kin, atoms1);
 
-    d_Diagonalize(N_modes, Hessian, NM.omega2, NM.MW_Tors, -1);
-    printf("Hessian diagonalization. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
+    printf("Normal modes computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
     t0=clock();
-
-    // Allocate only relevant modes
-    //NM.N_relevant=Relevant_modes(NM.sigma2, NM.select, NM.N, NM.N_cart/40);
-    NM.N_relevant=NM.N;
-    for(ia=0; ia<NM.N; ia++){
-      Transform_tors_modes(NM.Tors[ia], NM.MW_Tors[ia],
-			   J.T_sqrt_tr, J.T_sqrt_inv_tr,
-			   N_modes, naxe1);
-      Convert_torsion2cart(NM.Cart[ia], atoms1, NM.Tors[ia],
-			   axe1, naxe1, Ref_kin, ia);
-      /* Outdated
-	 Convert_torsion2cart_old(NM.Cart[ia], atoms1, NM.Tors[ia], axe1,
-			       naxe1, Ref1.atom_num, N_ref, &J);
-	 Normalize_vector_weighted(NM.Cart[ia], Ref1.mass_coord, N_cart);
-      */
+    if(FOLDING){
+      Compute_Hessian_TNM(Hessian_unfold, J.T_sqrt, J.T_sqrt_inv,
+			  Int_list_unfold, N_int_unfold,
+			  atoms1, natoms1, axe1, nmain, naxe1, N_modes,
+			  chains1, Nchain, KINETIC,
+			  K_OMEGA, K_PSI, K_PHI, K_CHI, K_BA, K_BL);
+      printf("Hessian unfold computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
+      Get_modes_tors(NM_unfold, N_modes, Hessian_unfold, J, axe1, naxe1,
+		     Ref_kin, atoms1);
+      printf("Normal modes unfold computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
+    }
+    if(BINDING){
+      Compute_Hessian_TNM(Hessian_apo, J.T_sqrt, J.T_sqrt_inv,
+			  Int_list_apo, N_int_apo,
+			  atoms1, natoms1, axe1, nmain, naxe1, N_modes,
+			  chains1, Nchain, KINETIC,
+			  K_OMEGA, K_PSI, K_PHI, K_CHI, K_BA, K_BL);
+      printf("Hessian apo computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
+      Get_modes_tors(NM_apo, N_modes, Hessian_apo,
+		     J, axe1, naxe1, Ref_kin, atoms1);
+      printf("Normal modes apo computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
     }
 
   /*************************  Normal modes ANM *************************/
@@ -827,33 +1122,34 @@ int main(int argc , char *argv[]){
     if(HNM){printf("Hinsen network model");}
     else{printf("Anisotropic network model\n");}
 
+    t0=clock();
     Compute_Hessian_ANM(Hessian, N_ref, Ref_kin.atom_num,
 			Int_list, N_int, atoms1, natoms1);
     printf("Hessian computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
-
-    d_Diagonalize(N_modes, Hessian, NM.omega2, NM.Cart, -1);
-    printf("Hessian diagonalization. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
     t0=clock();
-    
-    //  Convert normal modes
-    struct Tors *D_NM=malloc(N_modes*sizeof(struct Tors));
-    for(ia=0; ia<NM.N; ia++){
-      //if(ia<10)printf("om2= %.2g\n", NM.omega2[ia]);
-      Normalize_vector_weighted(NM.Cart[ia], Ref_kin.mass_coord, N_cart);
-      D_NM[ia].Cart=NM.Cart[ia];
-      D_NM[ia].Tors=NM.Tors[ia];
-      D_NM[ia].MW_Tors=NM.MW_Tors[ia];
-      D_NM[ia].coeff=malloc(1*sizeof(float));
-      D_NM[ia].N_axes=naxe1;
-      D_NM[ia].N_cart=N_cart;
-      Convert_cart2torsion(&(D_NM[ia]), Ref_kin, &J);
-      NM.Tors_frac[ia]=Tors_fraction(&(D_NM[ia]), Ref_kin.mass_coord);
+    Get_modes_Cart(NM, N_modes, Hessian, J, axe1, naxe1, Ref_kin);
+    printf("ANM modes computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
+    t0=clock();
+    if(FOLDING){
+      Compute_Hessian_ANM(Hessian_unfold, N_ref, Ref_kin.atom_num,
+			  Int_list_unfold, N_int_unfold, atoms1, natoms1);
+      printf("Hessian unfold computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
+      Get_modes_Cart(NM_unfold,N_modes,Hessian_unfold,J,axe1,naxe1,Ref_kin);
+      printf("Normal modes unfold computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
+    }
+    if(BINDING){
+      Compute_Hessian_ANM(Hessian_apo, N_ref, Ref_kin.atom_num,
+			  Int_list_apo, N_int_apo, atoms1, natoms1);
+      printf("Hessian apo computation. Time= %.2lf sec.\n",(clock()-t0)/nbtops);
+      t0=clock();
+      Get_modes_Cart(NM_apo, N_modes, Hessian_apo, J, axe1, naxe1, Ref_kin);
+      printf("Normal modes apo computation. Time= %.2lf sec.\n",
+	     (clock()-t0)/nbtops); t0=clock();
     }
   }
-  printf("Normal mode computation. Time= %.2lf sec.\n",
-	 (clock()-t0)/nbtops);
-  t0=clock();
-
+  printf("Normal mode computation finished\n");
 
 
   printf("\n************************************************\n");
@@ -864,78 +1160,59 @@ int main(int argc , char *argv[]){
 
   /********************  Collectivity of normal modes *******************/
   // Select modes based on eigenvalues and collectivity
-  int N_disc_freq=0, N_disc_coll=0;
 
-  // Select modes based on collectivity
-  float inv_sq_mass[N_cart];
-  for(i=0; i<N_cart; i++)inv_sq_mass[i]=1./sqrt(Ref_kin.mass_coord[i]);
 
   double E_ave=0; for(ia=0; ia<NM.N; ia++)E_ave+=NM.omega2[ia]; E_ave/=NM.N;
-  printf("Average eigenvalue omega^2 prior to norm: %.2g\n", E_ave);
-  double E_THR=E_MIN*E_ave;
-  
-  if(1) // YYY additional output in log file (related to discarded modes)
-  	{
-  	 printf("(discard) AV_OME2     %10.4g   | average EV (or omega^2) before kappa fit\n", E_ave);
- 	 double E_logave=0.0;
-  	 double E_xmin=pow(10,10);
-  	 double E_xmax=(-1)*pow(10,10);
-  	 double E_normsig2=0.0;
-  	 for(ia=0; ia<NM.N; ia++)
-  		{E_logave+=log(NM.omega2[ia]);
-  	 	 E_normsig2+=1.0/(NM.omega2[ia]);
-  	 	 if(NM.omega2[ia]>E_xmax)E_xmax=NM.omega2[ia];
-  	 	 if(NM.omega2[ia]<E_xmin)E_xmin=NM.omega2[ia];
-  		}
-  	 E_logave=exp(E_logave/NM.N);
-  	 printf("(discard) LOGAV_OME2  %10.4g   | exp(average log(omega^2))\n",
-		E_logave);
- 	 printf("(discard) MIN_OME2    %10.4g   | min omega^2\n", E_xmin);
-  	 printf("(discard) MAX_OME2    %10.4g   | max omega^2\n", E_xmax);
-  	 printf("(discard) NORM_SIG2   %10.4g   | ", E_normsig2);
-	 printf("sum(1/omega^2) --> CONTR_TH = (1/omega^2)/NORM_SIG2\n");
-  	 printf("(discard) THR_OME2    %10.4g   | = EMIN * AV_OME2\n", E_THR);
-  	 printf("(discard) THR_COLL    %10.4g   |", COLL_THR);
-	 printf("= COLL * 3 (cart coord per atom), max= 0.15*3*natoms\n");
-  	 printf("(discard) N_cart      %10d   | ", N_cart);
-	 printf("= natoms * 3 --> collect = xxx/N_cart\n");
-  	}
-  	
-  for(ia=0; ia<NM.N; ia++){
+  printf("Average omega^2 prior to norm: %.2g\n", E_ave);
+  E_THR=E_MIN*E_ave;
 
-    NM.Max_dev[ia]=
-      Compute_Max_dev(NM.Cart[ia], NM.omega2[ia], N_cart, inv_sq_mass);
-    NM.Tors_coll[ia]=Collectivity_norm2(NM.Tors[ia], naxe1)/naxe1;
-    NM.MW_Tors_coll[ia]=Collectivity_norm2(NM.MW_Tors[ia],naxe1)/naxe1;
-    NM.Cart_coll[ia]=Collectivity_norm2(NM.Cart[ia], N_cart); //_Renyi
-    if((NM.omega2[ia]<=E_THR)||(NM.Cart_coll[ia] < COLL_THR)){
-      printf("WARNING, discarding mode %d ", ia);
-      printf(" omega^2= %.3g Coll= %.0f RMSD= %.2g\n",
-	     NM.omega2[ia], NM.Cart_coll[ia], NM.Max_dev[ia]);
-      if(NM.Cart_coll[ia] < COLL_THR){N_disc_coll++;}
-      else{N_disc_freq++;}
-      NM.select[ia]=0; NM.sigma2[ia]=0;
-    }else{
-      NM.select[ia]=1;
-      NM.sigma2[ia]=1./NM.omega2[ia];
+  if(1){ // YYY additional output in log file (related to discarded modes)
+    printf("(discard) AV_OME2     %10.4g   | average EV (or omega^2) "
+	   "before kappa fit\n", E_ave);
+    double E_logave=0.0;
+    double E_xmin=pow(10,10);
+    double E_xmax=(-1)*pow(10,10);
+    double E_normsig2=0.0;
+    for(ia=0; ia<NM.N; ia++){
+      E_logave+=log(NM.omega2[ia]);
+      E_normsig2+=1.0/(NM.omega2[ia]);
+      if(NM.omega2[ia]>E_xmax)E_xmax=NM.omega2[ia];
+      if(NM.omega2[ia]<E_xmin)E_xmin=NM.omega2[ia];
     }
-    NM.Cart_coll[ia]/=N_cart;
+    E_logave=exp(E_logave/NM.N);
+    printf("(discard) LOGAV_OME2  %10.4g   | exp(average log(omega^2))\n",
+	   E_logave);
+    printf("(discard) MIN_OME2    %10.4g   | min omega^2\n", E_xmin);
+    printf("(discard) MAX_OME2    %10.4g   | max omega^2\n", E_xmax);
+    printf("(discard) NORM_SIG2   %10.4g   | ", E_normsig2);
+    printf("sum(1/omega^2) --> CONTR_TH = (1/omega^2)/NORM_SIG2\n");
+    printf("(discard) THR_OME2    %10.4g   | = EMIN * AV_OME2\n", E_THR);
+    printf("(discard) THR_COLL    %10.4g   |", COLL_THR);
+    printf("= COLL * 3 (cart coord per atom), max= 0.15*3*natoms\n");
+    printf("(discard) N_Cart      %10d   | ", N_Cart);
+    printf("= natoms * 3 --> collect = xxx/N_Cart\n");
   }
-  printf("%d modes selected\n", NM.N-(N_disc_coll+N_disc_freq));
-  printf("%d modes discarded for low collectivity ", N_disc_coll);
-  printf("and %d for low frequency\n", N_disc_freq);
-  int amin=0; while(NM.omega2[amin]<0)amin++;
-  printf("Smallest positive eigenvalue: %.2g a=%d ",NM.omega2[amin],amin);
-  printf("Threshold for selection: %.2g*<omega^2>\n", E_MIN);
 
-  // Ugo_mod 05/21
-  int N_disc_out=0;
-  /* float thr_outlier=2.5, thr_mode=0.5;
-     printf("Remove modes that move > %.2f outlier dof (rmsf > %.1f)\n",
-     thr_mode, thr_outlier);
-     N_disc_out=Filter_modes_outliers(NM, Ref_kin, thr_outlier, thr_mode);
-     printf("%d modes removed because they mostly move outliers\n",
-     N_disc_out);*/
+
+  // Select modes based on frequency collectivity and outliers
+  printf("Selecting modes of full interaction matrix\n");
+  int N_disc_freq=0, N_disc_out=0, N_disc_coll=
+    Compute_sigma2(&N_disc_freq, &N_disc_out, NM,
+		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+
+  if(FOLDING){
+    int N_disc_unfold_f=0, N_disc_unfold_o=0;
+    printf("Selecting modes of unfolded interaction matrix\n");
+    Compute_sigma2(&N_disc_unfold_f, &N_disc_unfold_o, NM_unfold,
+		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+  }
+  if(BINDING){
+    int N_disc_apo_f=0, N_disc_apo_o=0;
+    printf("Selecting modes of unbound interaction matrix\n");
+    Compute_sigma2(&N_disc_apo_f, &N_disc_apo_o, NM_apo,
+		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+  }
+
   printf("Normal mode selection. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
   t0=clock();
 
@@ -955,14 +1232,12 @@ int main(int argc , char *argv[]){
       if(ia>=NM.N_relevant)continue;
       for(ib=0; ib<=ia; ib++){
 	float *Ca=NM.Cart[ia], *Cb=NM.Cart[ib]; double q=0;
-	for(i=0; i<N_cart; i++)q+=Ca[i]*Cb[i]*Ref_kin.mass_coord[i];
+	for(i=0; i<N_Cart; i++)q+=Ca[i]*Cb[i]*Ref_kin.mass_coord[i];
 	printf(" %.3f", q);
       }
       printf("\n");
     }
   }
-
-
 
   printf("\n**************************************************\n");
   printf("**** Rescale force constant with B-factors ********\n");
@@ -972,15 +1247,25 @@ int main(int argc , char *argv[]){
   int anharmonic=0;
   float *B_TNM[2]; B_TNM[0]=malloc(N_ref*sizeof(float)); B_TNM[1]=NULL;
   float RMSD_NM, factor_B, kappa=
-    Fit_fluctuations(&mass_sum, B_TNM[0], &RMSD_NM, out_B1, anharmonic,
-		     NM, Ref_kin, REF, seq1, nres1, nmr1,
-		     atoms1, nameout1, &factor_B, outlier_B);
+    Fit_fluctuations(FIT_B, B_TNM[0], &RMSD_NM, out_B1, &Temp_comp,
+		     TEMPERATURE, anharmonic, NM, Ref_kin, REF, seq1, nres1,
+		     nmr1, atoms1, nameout1, &factor_B, outlier_B);
 
   // Rescale force constant
-  double sum_sigma2=Rescale_force(NM, Int_list, N_int, kappa, anharmonic);
+  Rescale_para(kappa);
+  double sum_sigma2= Rescale_Hessian(NM, Int_list, N_int, kappa, anharmonic);
+  if(FOLDING){
+    Rescale_Hessian(NM_unfold, Int_list_unfold, N_int_unfold, kappa,anharmonic);
+  }
+  if(BINDING){
+    Rescale_Hessian(NM_apo, Int_list_apo, N_int_apo, kappa, anharmonic);
+  }
+
 
   printf("Fitting B factors. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
-  printf("(discard) KAPPA   %10.4g    | ratio between OME2 above and in _Modes file\n",kappa); // YYY added output in log file
+  printf("(discard) KAPPA   %10.4g    | "
+	 "ratio between OME2 above and in .Modes file\n\n",kappa);
+  // YYY added output in log file
   t0=clock();
 
 
@@ -1024,7 +1309,8 @@ int main(int argc , char *argv[]){
     // YYY correct the last modes
     int ix; double sum_anh=0; sum=0; 
     for(ix=i-1; ix>=i-10; ix--){
-      if(ix<0)break; sum+=NM.sigma2[ix]; sum_anh+=NM.sigma2_anhar[ix];
+      if(ix<0)break;
+      sum+=NM.sigma2[ix]; sum_anh+=NM.sigma2_anhar[ix];
     }
     if(sum>0){
       sum_anh/=sum;
@@ -1032,13 +1318,15 @@ int main(int argc , char *argv[]){
     }
     anharmonic=1;
     B_TNM[1]=malloc(N_ref*sizeof(float));
-    kappa=Fit_fluctuations(&mass_sum, B_TNM[1], &RMSD_NM, out_B2, anharmonic,
-			   NM, Ref_kin, REF, seq1, nres1, nmr1,
+    kappa=Fit_fluctuations(FIT_B, B_TNM[1], &RMSD_NM, out_B2,
+			   &Temp_comp, TEMPERATURE, anharmonic, NM, Ref_kin,
+			   REF, seq1, nres1, nmr1,
 			   atoms1, nameout1, &factor_B, outlier_B);
 
     // Rescale force constant
+    Rescale_para(kappa);
     //double sum_sigma2_anhar=
-    Rescale_force(NM, Int_list, N_int, kappa, anharmonic);
+    Rescale_Hessian(NM, Int_list, N_int, kappa, anharmonic);
     printf("Anharmonicity analysis. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
     t0=clock();
   }
@@ -1057,7 +1345,7 @@ int main(int argc , char *argv[]){
 
   /************************ Print_summary *****************************/
 
-  float Mass_sqrt=sqrt(mass_sum);
+  float mass_sum_sqrt=sqrt(mass_sum);
   char *summary, *nameprot;
   if(CONF_CHANGE){
     summary=summary2; nameprot=name2;
@@ -1066,12 +1354,17 @@ int main(int argc , char *argv[]){
   }
   // Single protein properties
   // Mean_Cart_coll and Coll_thr_cc are computed here
-  Print_summary(summary, nameprot, parameters, Nchain, NM,
-		out_B1, out_B2, Tors_fluct, axe1, naxe1, nmain, nskip, natoms1,
-		nres1, N_diso1, N_int, N_inter, Cont_overlap,
-		N_disc_coll, N_disc_freq, N_disc_out, mass_sum);
+  G_NM_holo=
+    Print_summary(summary, nameprot, parameters, Nchain, NM,
+		  out_B1, out_B2, Tors_fluct, axe1,naxe1,nmain,nskip, natoms1,
+		  nres1, N_diso1, N_int, N_inter, Cont_overlap,
+		  N_disc_coll, N_disc_freq, N_disc_out, mass_sum,
+		  NM_unfold, N_int_unfold, E_cont_unfold, FOLDING,
+		  NM_apo, N_int_inter, E_cont_holo, E_cont_bind, BINDING,
+		  Ref_kin.mass_coord, Cart_interface, N_Cart_inter,
+		  rigid_inter, N_rigid);
   //if(CONF_CHANGE==0){
-    Print_mode_summary(nameout1,"Modes",NM,Mass_sqrt,anharmonic,kappa);
+    Print_mode_summary(nameout1,"Modes",NM,mass_sum_sqrt,anharmonic,kappa);
   //}
   
   printf("************************************************\n");
@@ -1091,12 +1384,12 @@ int main(int argc , char *argv[]){
     //if(PSI==0)sprintf(name_cc, "%s_NOPSI", name_cc);
 
     // Store conformation change over kinetic energy atoms for allostery
-    Confchange=malloc(Ref1.N_cart*sizeof(float));
+    Confchange=malloc(Ref1.N_Cart*sizeof(float));
     rmsd=rmsd_mclachlan_f(coord_1, coord_2, Ref1.mass_atom, Ref1.N_ref);
     for(i=0; i<N_ref; i++)Confchange[i]=coord_2[i]-coord_1[i];
     
     struct Tors Diff;
-    Allocate_tors(&Diff, naxe1, Ref1.N_cart, N_modes);
+    Allocate_tors(&Diff, naxe1, Ref1.N_Cart, N_modes);
 
     // int n_har=1, anharm; if(ANHARMONIC)n_har=2;
     for(int anharm=0; anharm<n_har; anharm++){
@@ -1113,7 +1406,7 @@ int main(int argc , char *argv[]){
 			   PRINT_CONFCHANGE, anharm);
       if(anharm==(n_har-1)){
 	Print_modes_confchange(name2,nameout2,NM,Diff,ANM,
-			       Mass_sqrt,rmsd, anharm, kappa);
+			       mass_sum_sqrt,rmsd, anharm, kappa);
       }
     }
 
@@ -1125,10 +1418,10 @@ int main(int argc , char *argv[]){
     
     if((NMUT!=-2)&&(NMUT!=0)){
       // Analysis of mutation
-      float mut_phi[naxe1], mut_CC[N_cart];
+      float mut_phi[naxe1], mut_CC[N_Cart];
       for(int anharm=0; anharm<n_har; anharm++){
 	int mut_ok=Mutation(mut_phi, naxe1, mut_CC, // output
-			    Ref_kin, Nmut, AAwt, Posmut, AAmut,
+			    KAPPA, Ref_kin, Nmut, AAwt, Posmut, AAmut,
 			    NM, atoms1, natoms1, Int_list, N_int, seq1,
 			    B_TNM[anharm], Diff.Cart, Ref1, Diff.Tors,
 			    NM.tors_fluct, nameout2, anharm, Mut_para);
@@ -1163,7 +1456,7 @@ int main(int argc , char *argv[]){
 	  Force.Cart[j+2]*Force.Cart[j+2];
 	j+=3;
       }
-      char nameforce[200]; sprintf(nameforce, "%s_force.pdb", nameout2);
+      char nameforce[400]; sprintf(nameforce, "%s_force.pdb", nameout2);
       Print_cart_fluct(Ref_kin.atom_num, N_ref, F_module, atoms1, seq1,
 		       nameforce,"FORCE");
       Print_force_confchange(NM, Diff, atoms1, axe1, naxe1, seq1, nres1,
@@ -1186,7 +1479,7 @@ int main(int argc , char *argv[]){
   int N_print=N_MODE_PRINT;
   if(N_print>NM.N_relevant)N_print=NM.N_relevant;
   if(N_print){
-    Print_modes(N_print, nameout1, "Cart", NM.select, N_cart,
+    Print_modes(N_print, nameout1, "Cart", NM.select, N_Cart,
 		NM.Cart, NM.Cart_coll, NM.sigma2, sum_sigma2, axe1, naxe1,
 		atoms1, natoms1, seq1, nres1, Ref_kin.atom_num, N_ref);
     Print_modes(N_print, nameout1, "Tors", NM.select, naxe1,
@@ -1201,7 +1494,6 @@ int main(int argc , char *argv[]){
 
   // Print modes in PDB format
   if((PRINT_PDB)&&(N_MODE_PRINT)){
-    //double RMSD=1.00, SDEV_SIM=RMSD*RMSD*Ref_kin.mass_tot;
     //double Coll_ave=0; for(ia=0; ia<NM.N; ia++)Coll_ave+=NM.Cart_coll[ia];
     //Coll_ave/=NM.N;
     int N_STEP=40, ip=0;
@@ -1219,7 +1511,7 @@ int main(int argc , char *argv[]){
 
   /**********************  Predict RMSD of mutations ***********************/
   if(PRED_MUT){
-    Predict_mutations(NM, atoms1, natoms1, naxe1, Ref_kin,
+    Predict_mutations(NM, KAPPA, atoms1, natoms1, naxe1, Ref_kin,
 		      Int_list, N_int, seq1, nres1, nameout1, Mut_para);
   }
 
@@ -1234,7 +1526,8 @@ int main(int argc , char *argv[]){
     for(int anharm=0; anharm<n_har; anharm++){
       printf("Predicting dynamical couplings, anharmonicity=%d\n", anharm);
       Predict_allostery(NM, atoms1, Ref_kin, Int_list, N_int, seq1, nameout1,
-			Confchange, file_pdb1, chain1, nres1, SITES, anharm);
+			Confchange, file_pdb1, chain1, nres1, SITES, anharm,
+			Int_list_inter, N_int_inter);
     }
     printf("Dynamical coupling. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
     t0=clock();
@@ -1250,10 +1543,10 @@ int main(int argc , char *argv[]){
       for(int anhar=0; anhar<=1; anhar++){
 	if((ANHARMONIC==0)&&anhar)continue;
 	char name_ens[40]; sprintf(name_ens,"Ampl_%.2g", fact);
-	if(anhar==0){sprintf(name_ens,"%s_harmonic",name_ens);}
-	else{sprintf(name_ens,"%s_anharmonic",name_ens);}
+	if(anhar==0){strcat(name_ens,"_harmonic");}
+	else{strcat(name_ens,"_anharmonic");}
 	if(Simulate_ensemble(Para_simul.N_SIMUL, fact, name_ens,
-			     Para_simul, Mass_sqrt, atoms1, natoms1,
+			     Para_simul, mass_sum_sqrt, atoms1, natoms1,
 			     axe1, naxe1, bonds, seq1, nres1, N_diso1, NM, J,
 			     Ref_kin, Int_list, N_int, Int_KB, INT_TYPE, s0,
 			     nameout1, anhar)<0)break;
@@ -1272,7 +1565,7 @@ int main(int argc , char *argv[]){
 
   /**************  Computing conformation change given a force ********/
   if((FILE_FORCE!=NULL)&& (ANM==0)){
-    float coord_ini[N_cart], coord_end[N_cart];
+    float coord_ini[N_Cart], coord_end[N_Cart];
     Write_ref_coord_atom(coord_ini, N_ref, atoms1, Ref_kin.atom_num);
     char chain3=chain1[0];
     Force2Confchange(coord_end, FILE_FORCE, naxe1, N_ref, atoms1,
@@ -1377,7 +1670,7 @@ int main(int argc , char *argv[]){
     free(ali_atoms.ali2);
     free(ali_atoms.mass);
   }
-  Clean_memory(NM, J, Hessian, naxe1, N_ref, N_cart, N_modes, ANM);
+  Clean_memory(NM, J, Hessian, naxe1, N_ref, N_Cart, N_modes, ANM);
   Empty_Ref(&Ref_kin);
   return(0);
   
@@ -1385,17 +1678,25 @@ int main(int argc , char *argv[]){
 
 /******************  Other routines  ***************************/
 
-double Rescale_force(struct Normal_Mode NM,
-		     struct interaction *Int_list, int N_int,
-		     float kappa, int anharmonic)
+void Rescale_para(float kappa)
 {
-  double sum_sigma2=0; int i;
-  printf("Rescaling force constant by factor %.3g\n", kappa);
+  printf("Rescaling force constant by factor %.4g\n", kappa);
   KAPPA*=kappa;
   K_PSI*=kappa; K_PHI*=kappa; K_OMEGA*=kappa; K_CHI*=kappa;
   K_BA*=kappa; K_BL*=kappa;
+  K0=KAPPA*pow(C0,EXP_HESSIAN);
+}
+
+double Rescale_Hessian(struct Normal_Mode NM,
+		       struct interaction *Int_list, int N_int, 
+		       float kappa, int anharmonic)
+{
+
   // rescale interactions
-  for(i=0; i<N_int; i++)Int_list[i].sec_der*=kappa;
+  for(int i=0; i<N_int; i++)Int_list[i].sec_der*=kappa;
+
+  double sum_sigma2=0; int i;
+  printf("Rescaling omega2 by factor %.3g\n", kappa);
 
   // rescale modes
   for(i=0; i<NM.N; i++){
@@ -1418,7 +1719,7 @@ double Rescale_force(struct Normal_Mode NM,
 void Allocate_memory(struct Normal_Mode *NM,
 		     struct Jacobian *J,
 		     double ***Hessian,
-		     int N_axes, int N_ref, int N_cart,
+		     int N_axes, int N_ref, int N_Cart,
 		     int N_modes, int N_res)
 {
 
@@ -1427,29 +1728,29 @@ void Allocate_memory(struct Normal_Mode *NM,
   printf("Hessian allocated\n");
 
   // Kinematics:
-  Allocate_Jacobian(J, N_axes, N_cart);
+  Allocate_Jacobian(J, N_axes, N_Cart);
   printf("Jacobian allocated\n");
 
   // Normal modes
-  Allocate_Normal_modes(NM, N_modes, N_axes, N_cart);
+  Allocate_Normal_modes(NM, N_modes, N_axes, N_Cart);
   printf("Normal modes allocated\n");
 
 }
 
 void Allocate_Normal_modes(struct Normal_Mode *NM,
-			   int N_modes, int N_axes, int N_cart)
+			   int N_modes, int N_axes, int N_Cart)
 {
   NM->N=N_modes;
   NM->N_kin=N_modes;
   NM->N_axes=N_axes;
-  NM->N_cart=N_cart;
+  NM->N_Cart=N_Cart;
   int i;
 
   NM->select=malloc(N_modes*sizeof(int));
   NM->omega=malloc(N_modes*sizeof(float));
   NM->omega2=malloc(N_modes*sizeof(float));
   NM->sigma2=malloc(N_modes*sizeof(float));
-  NM->Cart=Allocate_mat2_f(N_modes, N_cart);
+  NM->Cart=Allocate_mat2_f(N_modes, N_Cart);
   NM->Tors=Allocate_mat2_f(N_modes, N_axes);
   NM->MW_Tors=Allocate_mat2_f(N_modes, N_axes);
   NM->Cart_coll=malloc(N_modes*sizeof(float));
@@ -1460,7 +1761,7 @@ void Allocate_Normal_modes(struct Normal_Mode *NM,
   NM->Tors_frac=malloc(N_modes*sizeof(float));
   for(i=0; i<N_modes; i++)NM->Tors_frac[i]=1.0;
   NM->tors_fluct=malloc(NM->N_axes*sizeof(float));
-  NM->cart_fluct=malloc(NM->N_cart*sizeof(float));
+  NM->cart_fluct=malloc(NM->N_Cart*sizeof(float));
   NM->confchange2=malloc(N_modes*sizeof(float));
   NM->sigma2_anhar=malloc(N_modes*sizeof(float));
   NM->d_KL=malloc(N_modes*sizeof(float));
@@ -1505,7 +1806,7 @@ void Empty_Normal_modes(struct Normal_Mode NM)
 void Clean_memory(struct Normal_Mode NM,
 		  struct Jacobian J,
 		  double **Hessian,
-		  int N_axes, int N_ref, int N_cart,
+		  int N_axes, int N_ref, int N_Cart,
 		  int N_modes, int ANM)
 {
 
@@ -1527,19 +1828,29 @@ void Clean_memory(struct Normal_Mode NM,
 
 /*************************   Printing  *************************/
 
-void Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
-		   struct Normal_Mode NM,
-		   char *out_B1, char *out_B2, float Tors_fluct,
-		   struct axe *axes, int N_axes, int N_main,
-		   int Nskip, int N_atoms, int N_res, int N_diso,
-		   int N_int, int N_inter, float Cont_overlap,
-		   int N_disc_coll, int N_disc_freq, int N_disc_out,
-		   float mass_sum)
+double Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
+		     struct Normal_Mode NM,
+		     char *out_B1, char *out_B2, float Tors_fluct,
+		     struct axe *axes, int N_axes, int N_main,
+		     int Nskip, int N_atoms, int N_res, int N_diso,
+		     int N_int, int N_inter, float Cont_overlap,
+		     int N_disc_coll, int N_disc_freq, int N_disc_out,
+		     float mass_sum,
+		     struct Normal_Mode NM_unfold,
+		     int N_int_unfold, double E_cont_unfold, int FOLDING,
+		     struct Normal_Mode NM_apo, int N_int_inter,
+		     double Econt_holo, double Econt_bind, int BINDING,
+		     float *mass_coord, int *Cart_interface, int N_Cart_inter,
+		     int *rigid_inter, int N_rigid)
 {
   FILE *file_out;
 
   printf("Writing %s\n", name_out);
   file_out=fopen(name_out, "w");
+
+  float r0=pow(N_res, 1/3);
+  float c=(float)N_int/(float)N_res;
+  float Surf=(3.9+4 -c)*r0*r0;
 
   fprintf(file_out, "%s\n", parameters);
   fprintf(file_out, "protein               %s\n", name1);
@@ -1547,6 +1858,7 @@ void Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
   fprintf(file_out, "Nres                  %d\n", N_res);
   fprintf(file_out, "Mass                  %.0f\n", mass_sum);
   fprintf(file_out, "Degrees of freedom    %d\n", NM.N);
+  fprintf(file_out, "Rigid Deg of freed    %d\n", N_rigid);
   fprintf(file_out, "Side chain            %d\n", N_axes-N_main);
   fprintf(file_out, "Skipped main chain    %d\n", Nskip);
   fprintf(file_out, "Discarded modes coll. %d\n", N_disc_coll);
@@ -1554,27 +1866,47 @@ void Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
   fprintf(file_out, "Discarded modes outl. %d\n", N_disc_out);
   fprintf(file_out, "Disordered gaps       %d\n", N_diso);
   fprintf(file_out, "Native interactions   %d\n", N_int);
-  if(Nchain>1)fprintf(file_out, "Interchain contacts    %d\n", N_inter);
   if(Cont_overlap >= 0)
     fprintf(file_out, "Overlap with MIN int. %.3f\n", Cont_overlap);
+  if(Nchain>1)fprintf(file_out, "Interchain contacts    %d\n", N_inter);
+  fprintf(file_out, "Force constant at %.1fA %.4g\n", C0, KAPPA);
+  if(TEMPERATURE>0)
+    fprintf(file_out, "Temperature:          %.3g K\n", TEMPERATURE);
+  fprintf(file_out, "Estimated surface     %.4g\n", Surf);
+  fprintf(file_out, "Contact energy        %.4g\n", Econt_holo);
 
   int anharmonic=0;
-  Print_thermal(anharmonic, file_out, NM, out_B1, axes, N_main, N_res, Nchain);
+  G_NM_holo=
+    Print_thermal(anharmonic, file_out, NM, out_B1, axes, N_main, N_res,Nchain,
+		  NM_unfold, N_int_unfold, N_int, E_cont_unfold, FOLDING,
+		  NM_apo, N_int_inter, Econt_bind, BINDING, 
+		  mass_coord,Cart_interface,N_Cart_inter,rigid_inter,N_rigid);
   fprintf(file_out, "Torsional_RMSD_Harm   %.3f\n", Tors_fluct);
   fprintf(file_out, "#\n");
 
   if(ANHARMONIC){
     anharmonic=1;
-    Print_thermal(anharmonic, file_out, NM, out_B2, axes,N_main,N_res,Nchain);
+    Print_thermal(anharmonic, file_out, NM, out_B2, axes,N_main,N_res,Nchain,
+		  NM_unfold, N_int_unfold, N_int, E_cont_unfold, FOLDING,
+		  NM_apo, N_int_inter, Econt_bind, BINDING, 
+		  mass_coord,Cart_interface,N_Cart_inter,rigid_inter,N_rigid);
     fprintf(file_out, "#\n");
   }
   fclose(file_out);
+  return(G_NM_holo);
 }
 
-void Print_thermal(int anharmonic, FILE *file_out,
-		   struct Normal_Mode NM, char *out_B,
-		   struct axe *axes, int N_main,
-		   int N_res, int Nchain)
+double Print_thermal(int anharmonic, FILE *file_out,
+		     struct Normal_Mode NM, char *out_B,
+		     struct axe *axes, int N_main,
+		     int N_res, int Nchain,
+		     struct Normal_Mode NM_unfold,
+		     int N_int_unfold, int N_int, 
+		     double E_cont_unfold, int FOLDING,
+		     struct Normal_Mode NM_apo, int N_int_inter,
+		     double Econt_bind, int BINDING,
+		     float *mass_coord, int *Cart_interface, int N_Cart_inter,
+		     int *rigid_inter, int N_rigid)
 {
   float *sigma2; char name[80]="";
   if(anharmonic){
@@ -1606,30 +1938,137 @@ void Print_thermal(int anharmonic, FILE *file_out,
   fprintf(file_out, "Num.collective_modes  %d\n", N_modes_coll);
   fprintf(file_out, "Threshold_collectivity %.3f\n", Coll_thr_cc);
   */
+  double Free_Ene_holo=0, Free_Ene_holo_rigid=0;
 
   {  /* Harmonic entropy quantum
-	/h= 1.055 e-34 J.sec
+	h/= 1.055 e-34 J.sec
+	h = 6.626 e-34 J.sec
 	k_B T at 293K = 1.381 e-23 *293= 4.05e-21 J
-	/h/k_BT = 0.260e-13 s^(-1)
-	omega in units of s^(-1): sqrt(k_B T/M )(1/Dr)
-	where 1/Dr = (omega) 10^10 omega
-	sqrt(k_B T/M)= sqrt(1/M) in units of atomic masses *
-	sqrt(4.05e-21 J/1.66e-27 Kg)=1562
-	Time unit in s^-1: 1.562*10^13/sqrt(M) in atomic masses
+	/h/k_BT = 0.260e-13 s^(-1) = 2.6 ps
+	h/k_BT = 1.637e-13 s^(-1) = 16.36 ps
+	omega_q = kBT/h/ = 0.385 ps^(-1)
+	(but K. Hinsen writes it is 6 ps^-1)...
+
+	Our internal units of time are:
+	[t]=[m l^2/E]^(1/2)
+	Energy unit: kT= 4.05e-21 J at T=293
+	Mass unit: Atomic mass 1.66e-27 kg
+	mass/Energy: 0.4099e-6 sqrt: 0.64 e-3
+	//sqrt(k_B T/M)= sqrt(4.05e-21 J/1.66e-27 Kg)=1562 OK
+	length unit = e-10 m
+	time unit: 0.64 e-13 = 6.4 e-12 = 6.4 ps
+	Frequency unit: 0.156 ps^(-1)
+	omega_q = 2.464 in internal units
+	1/(omega_q)^2= 0.165 in internal units
+
+	Other constants:
+	Avogadro number NA= 6.02e+23
+	Gas constant R= 8.314 J/(K*mol) 
+
+	//omega in units of s^(-1): sqrt(k_B T/M)(1/Dr)
+
      */
-    double beta_h=0.26e-13; 
-    double omega_scale=1.562e+13/sqrt(mass_sum);
-    double beta_omega=beta_h*omega_scale;
-    double entropy=0;
-    for(i=0; i<NM.N; i++){
-      if((NM.select[i]==0)||(sigma2[i]<=0))continue;
-      float omega=1./sqrt(sigma2[i]);
-      double x=beta_omega*omega, f=exp(-x);
-      if(f<1)entropy+=(-log(1.-f)+x*f/(1.-f));
+    //double beta_h=1.636; //0.26 e-13; 
+    //double omega_scale=1.562; //e+13 /sqrt(mass_sum)
+    //double omega_scale=0.0490; //e+13 /sqrt(mass_sum)
+    //omega_scale*=(Temp_comp/293);
+    //double beta_omega=beta_h*omega_scale, omega_q=1./beta_omega;
+    double omega_q=0.385*(Temp_comp/293)/Freq_unit;
+    double beta_omega=1./omega_q;
+    double entropy=
+      Compute_entropy(&Free_Ene_holo, &Free_Ene_holo_rigid,
+		      NM, sigma2, beta_omega, NULL, NULL, 0, NULL, 0);
+    if(anharmonic==0){
+      fprintf(file_out,"kT/h=                %.4g\n", omega_q);
     }
-    if(anharmonic==0)
-      fprintf(file_out,"kT//h=                %.3g\n", 1./beta_omega);
-    fprintf(file_out, "Entropy per res.      %.3g\n",  entropy/N_res);
+    int m=0, k; for(k=0; k<NM.N; k++){if(NM.omega[k]>omega_q)break; m++;}
+    fprintf(file_out, "Quantum modes:        %d / %d\n", NM.N-m, NM.N);
+    fprintf(file_out, "Entropy per res       %.4g", entropy/N_res);
+    if(BINDING){fprintf(file_out, " (holo)");}
+    fprintf(file_out, "\n");
+    fprintf(file_out, "Free energy per res   %.4g", Free_Ene_holo/N_res);
+    if(BINDING){fprintf(file_out, " (holo)");}
+    fprintf(file_out, "\n");
+
+    if(FOLDING){
+      float *s2_unfold;
+      if(anharmonic){s2_unfold=NM_unfold.sigma2_anhar;}
+      else{s2_unfold=NM_unfold.sigma2;}
+      double Free_Ene_unfold=0, Free_Ene_unfold_rigid=0;
+      double entropy_unfold= 
+	Compute_entropy(&Free_Ene_unfold, &Free_Ene_unfold_rigid, NM,
+			s2_unfold, beta_omega, NULL, NULL, 0, NULL, 0);
+      fprintf(file_out, "Unfolded contacts:   %d\n", N_int_unfold);
+      fprintf(file_out, "Contact energy unfold %.4g\n", E_cont_unfold);
+      fprintf(file_out, "Entropy per res       %.4g (unfolded)\n",
+	      (entropy_unfold)/N_res);
+      fprintf(file_out, "Free energy per res   %.4g (unfolded)\n",
+	      Free_Ene_unfold/N_res);
+      double DG_NM_unfold=(Free_Ene_holo-Free_Ene_unfold)/N_res;
+      fprintf(file_out, "Unfold free energy NM  %.4g\n", DG_NM_unfold);
+      fprintf(file_out, "Unfold entropy NM      %.4g\n",
+	      (entropy_unfold-entropy)/N_res);
+
+
+      float r0=pow(N_res, 1/3);
+      float c=(float)N_int/(float)N_res;
+      float Surf=(3.9+4 -c)*r0*r0;
+
+      float c_1=(float)N_int_unfold/(float)N_res;
+      float Surf_1=(3.9+4 -c_1)*r0*r0;
+      fprintf(file_out, "SASA diff unfold       %.4g\n",
+	      Surf_1-Surf);
+    }
+  
+    if(BINDING){
+      float *s2_apo;
+      if(anharmonic){s2_apo=NM_apo.sigma2_anhar;}
+      else{s2_apo=NM_apo.sigma2;}
+      entropy= //double entropy_holo=
+	Compute_entropy(&Free_Ene_holo, &Free_Ene_holo_rigid, NM, sigma2,
+			beta_omega, mass_coord, Cart_interface, N_Cart_inter,
+			rigid_inter, N_rigid);
+      double Free_Ene_apo=0, Free_Ene_apo_rigid=0;
+      entropy=
+	Compute_entropy(&Free_Ene_apo, &Free_Ene_apo_rigid, NM_apo, s2_apo,
+			beta_omega, mass_coord, Cart_interface, N_Cart_inter,
+			rigid_inter, N_rigid);
+      fprintf(file_out, "Interface contacts:   %d\n", N_int_inter);
+      fprintf(file_out, "Entropy per res       %.4g (apo, interface)\n",
+	      (entropy)/N_res);
+      fprintf(file_out, "Free energy per res   %.4g (apo, intern)\n",
+	      Free_Ene_apo/N_res);
+      fprintf(file_out, "Free energy rigid     %.4g (apo, /nrigid)\n",
+	      Free_Ene_apo_rigid/N_rigid);
+      DG_NM_internal=(Free_Ene_holo-Free_Ene_apo)/N_res;
+      DG_NM_rigid=(Free_Ene_holo_rigid-Free_Ene_apo_rigid)/N_res;
+      //N_rigid_inter;
+      Free_Ene_holo/=N_res;
+
+      fprintf(file_out, "Binding free energy NM  %.4g (internal, /Nres)\n",
+	      DG_NM_internal);
+      fprintf(file_out, "Binding free energy NM  %.4g (rigid body, /nrigid)\n",
+	      DG_NM_rigid);
+
+      //fprintf(file_out, "Binding entropy NM      %.4g\n",
+      //	      entropy_holo-entropy);
+      fprintf(file_out, "Binding free energy cont %.4g\n", Econt_bind);
+
+      int N_res=N_res_1+N_res_2, N_int=N_cont_1+N_cont_2+N_int_inter;
+      float r0=pow(N_res, 1/3);
+      float c=(float)N_int/(float)N_res;
+      float Surf=(3.9+4 -c)*r0*r0;
+
+      float r0_1=pow(N_res_1, 1/3);
+      float c_1=(float)N_cont_1/(float)N_res_1;
+      float Surf_1=(3.9+4 -c_1)*r0_1*r0_1;
+
+      float r0_2=pow(N_res_2, 1/3);
+      float c_2=(float)N_cont_2/(float)N_res_2;
+      float Surf_2=(3.9+4 -c_2)*r0_2*r0_2;
+      fprintf(file_out, "SASA difference          %.4g\n",
+	      Surf_1+Surf_2-Surf);
+    }
   }
 
   fprintf(file_out, "%s", out_B);
@@ -1651,10 +2090,48 @@ void Print_thermal(int anharmonic, FILE *file_out,
       rot+=rot_ia*sigma2[ia];
       all+=sigma2[ia];
     }
-    fprintf(file_out, "Fraction_internal_tra %.3f\n", tra/all);
-    fprintf(file_out, "Fraction_internal_rot %.3f\n", rot/all);
+    fprintf(file_out, "Fraction_RB_tra       %.3g\n", tra/all);
+    fprintf(file_out, "Fraction_RB_rot       %.3g\n", rot/all);
   }
+  return(Free_Ene_holo);
+}
 
+double Compute_entropy(double *Free_Ene, double *Free_Ene_rigid,
+		       struct Normal_Mode NM, float *sigma2,
+		       double beta_omega, float *mass_coord,
+		       int *Cart_interface, int N_Cart_inter,
+		       int *rigid_inter, int N_rigid)
+{
+  double entropy=0; *Free_Ene=0;
+  for(int i=0; i<NM.N; i++){
+    if((NM.select[i]==0)||(sigma2[i]<=0))continue;
+    double w_interface=1;
+    if(Cart_interface){
+      w_interface=0; float *xi=NM.Cart[i];
+      for(int k=0; k<N_Cart_inter; k++){
+	int j=Cart_interface[k]; w_interface+=mass_coord[j]*xi[j]*xi[j];
+      }
+    }
+    double w_internal=1;
+    if(rigid_inter){
+      float *xi=NM.MW_Tors[i];
+      for(int k=0; k<N_rigid; k++){
+	int a=rigid_inter[k]; if(a>=0)w_internal-=xi[a]*xi[a];
+      }
+    }
+
+    float omega=1./sqrt(sigma2[i]);
+    double x=beta_omega*omega, f=exp(-x);
+    if(f<1){
+      double lf= log(1.-f), G=w_interface*(x/2+lf);
+      entropy+=w_internal*w_interface*(-lf+x*f/(1.-f));
+      (*Free_Ene)+=w_internal*G;
+      (*Free_Ene_rigid)+=(1-w_internal)*G;
+    }else{
+      printf("WARNING, exp(-h/omega/kT)= %.2g\n", f);
+    }
+  }
+  return(entropy);
 }
 
 /***************************  Input **********************************/
@@ -1691,7 +2168,8 @@ int getArgs(int argc, char **argv,
 	    int *ALL_PAIRS, float *SIGMA,
 	    int *STRAIN, char *SITES,
 	    int *PRINT_CMAT, int *ANHARMONIC,
-	    int *PRINT_PDB_ANHARM, int *N_PDB_print)
+	    int *PRINT_PDB_ANHARM, int *N_PDB_print,
+	    int *FOLDING, int *BINDING, int *n_apo, char *apo_chains)
 {
   int i; //p1=0, p2=0, out=0
 
@@ -1756,7 +2234,8 @@ int getArgs(int argc, char **argv,
 		       PRINT_DIR_COUPLING, PRINT_COORD_COUPLING,
 		       PRINT_SIGMA_DIJ, PROF_TYPE, ALL_PAIRS, SIGMA,
 		       STRAIN, SITES, PRINT_CMAT, ANHARMONIC,
-		       PRINT_PDB_ANHARM, N_PDB_print);
+		       PRINT_PDB_ANHARM, N_PDB_print,
+		       FOLDING, BINDING, n_apo, apo_chains);
   if(infile)goto inform;
   printf("WARNING, input file not specified or absent (%s)\n", argv[1]);
   printf("WARNING, reading parameters from command line\n");
@@ -1959,28 +2438,29 @@ int getArgs(int argc, char **argv,
     printf("Degrees of freedom: Torsional (TNM, default)\n");
   }
 
-  char tmpstr[500];
+
   //modyves: some changes to not sprintf parameters into parameters, which gave me some warnings.
+  char tmp[100];
   sprintf(parameters, "Para: Psi=%d  Omega=%d Sidechain=%d Min_int=%d  REF=%s",
 	  *PSI, *OMEGA, *SIDECHAINS, *MIN_INT, REF);
-  sprintf(tmpstr," E_MIN=%.2g COLL_THR=%.0f", *E_MIN, *COLL_THR);
-  strcat(parameters,tmpstr);
-  sprintf(tmpstr," K_O=%.2g K_F=%.2g K_P=%.2g K_C=%.2g K_BA=%.2g K_BL=%.2g",
+  sprintf(tmp," E_MIN=%.2g COLL_THR=%.0f", *E_MIN, *COLL_THR);
+  strcat(parameters,tmp);
+  sprintf(tmp," K_O=%.2g K_F=%.2g K_P=%.2g K_C=%.2g K_BA=%.2g K_BL=%.2g",
 	  *K_OMEGA, *K_PHI, *K_PSI, *K_CHI, *K_BA, *K_BL);
-  strcat(parameters,tmpstr);
-  sprintf(tmpstr," CONT=%s ", INT_TYPE); strcat(parameters,tmpstr);
+  strcat(parameters,tmp);
+  sprintf(tmp," CONT=%s ", INT_TYPE); strcat(parameters,tmp);
   if(strncmp(INT_TYPE, "SCR", 3)==0){
-    sprintf(tmpstr, " Tolerance=%.2f THR=%.2f", *S_THR, *C_THR);
+    sprintf(tmp, " Tolerance=%.2f THR=%.2f", *S_THR, *C_THR);
   }else if(strncmp(INT_TYPE, "SHA", 3)==0){
-    sprintf(tmpstr, " type=%d d=%.2f THR=%.1f", *S_TYPE, *S_THR, *C_THR);
+    sprintf(tmp, " type=%d d=%.2f THR=%.1f", *S_TYPE, *S_THR, *C_THR);
   }else{
-    sprintf(tmpstr, " thr=%.2f", *C_THR);
+    sprintf(tmp, " thr=%.2f", *C_THR);
   }
-  strcat(parameters,tmpstr);
-  sprintf(tmpstr, " EXPO=%.1f ", EXP_HESSIAN); strcat(parameters,tmpstr);
-  if(*FIT_B==0){sprintf(tmpstr, " KAPPA=%.1f", *KAPPA);}
-  else{sprintf(tmpstr, " KAPPA obtained from fit");}
-  strcat(parameters,tmpstr);
+  strcat(parameters,tmp);
+  sprintf(tmp, " EXPO=%.1f ", EXP_HESSIAN); strcat(parameters,tmp);
+  if(*FIT_B==0){sprintf(tmp, " KAPPA=%.1f", *KAPPA);}
+  else{sprintf(tmp, " KAPPA obtained from fit");}
+  strcat(parameters,tmp);
   fflush(stdout);
   return (0);
 }
@@ -2037,6 +2517,9 @@ void help(void)
   fprintf(stderr, "CH2=  A                                  ");
   fprintf(stderr, "! Chain\n");
   fprintf(stderr, "#\n");
+  fprintf(stderr, "BINDING=  XY     ! Compute binding free energy between\n");
+  fprintf(stderr, "#                ! chains XY and rest (optional)\n");
+  fprintf(stderr, "FOLDING=  0,1    ! Compute unfolding entropy\n");
   fprintf(stderr, "####  Model parameters (reccomended: do not change)\n");
   fprintf(stderr,
 	  "#===============================================================\n");
@@ -2269,7 +2752,8 @@ int Read_para(char *filename,
 	      char *PROF_TYPE,
 	      int *ALL_PAIRS, float *SIGMA,
 	      int *STRAIN, char *SITES, int *PRINT_CMAT,
-	      int *ANHARMONIC, int *PRINT_PDB_ANHARM, int *N_PDB_print)
+	      int *ANHARMONIC, int *PRINT_PDB_ANHARM, int *N_PDB_print,
+	      int *FOLDING, int *BINDING, int *n_apo, char *apo_chains)
 {
   FILE *file_in=fopen(filename, "r");
   if(file_in==NULL){
@@ -2463,6 +2947,24 @@ int Read_para(char *filename,
     }else if(strncmp(string, "PDB_STEP", 8)==0){
       sscanf(string+9, "%f", &(Para_simul->PDB_STEP));
 
+    }else if(strncmp(string, "FOLDING", 7)==0){
+      sscanf(string+8, "%d", FOLDING);
+    }else if(strncmp(string, "BINDING", 7)==0){
+      *n_apo=0; char *s=string+8;
+      while(*s!='\n' && *s!='!'){
+	if(*s!=' '){apo_chains[*n_apo]=*s; (*n_apo)++;}
+	s++;
+      }
+      if(*n_apo>0 && *n_apo<100){
+	*BINDING=1; apo_chains[*n_apo]='\0';
+	printf("Computing binding free energy between chains ");
+	for(int j=0; j<*n_apo; j++)printf("%c", apo_chains[j]);
+	printf(" and the other chains\n"); 
+      }else{
+	printf("WARNING, %d is not an allowed value of n_apo\n", *n_apo);
+	printf("Read string: %s", string);
+      }
+
       //}else if(strncmp(string, "", )==0){
     }else if(string[0]!='\n'){
       printf("WARNING, unrecognized line:\n%s", string);
@@ -2498,16 +3000,236 @@ int Read_para(char *filename,
   return(1);
 }
 
-int Relevant_modes(float *sigma2, int *select, int N, float N_atoms)
+void Get_modes_tors(struct Normal_Mode NM, int N_modes,
+		    double **Hessian, struct Jacobian J,
+		    struct axe *axe1, int naxe1, struct Reference Ref_kin,
+		    atom *atoms1)
 {
-  double sum=0; int i;
-  for(i=0; i<N; i++)if(select[i])sum+=sigma2[i];
-  float eps; if(N_atoms>100){eps=1./N_atoms;}else{eps=1./100;}
-  float thr=sum*(1.-eps); sum=0;
-  for(i=0; i<N; i++){
-    if(select[i])sum+=sigma2[i];
-    if(sum>thr)break;
+  float t0=clock();
+
+  d_Diagonalize(N_modes, Hessian, NM.omega2, NM.MW_Tors, -1);
+  printf("Hessian diagonalization. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
+  t0=clock();
+
+  // UGO: Rescale omega^2 with mass 09/08/2022
+  float omega_norm=Ref_kin.mass_sum/Ref_kin.N_ref;
+  for(int i=0; i<N_modes; i++)NM.omega2[i]*=omega_norm;
+  
+  // Allocate only relevant modes
+  NM.N_relevant=NM.N;
+  for(int ia=0; ia<NM.N; ia++){
+    Transform_tors_modes(NM.Tors[ia], NM.MW_Tors[ia],
+			 J.T_sqrt_tr, J.T_sqrt_inv_tr,
+			 N_modes, naxe1);
+    Convert_torsion2cart(NM.Cart[ia], atoms1, NM.Tors[ia],
+			 axe1, naxe1, Ref_kin, ia);
   }
-  return(i);
+  printf("Torsional and Cartesian modes. Time= %.2lf sec.\n",
+	 (clock()-t0)/nbtops);
 }
 
+
+void Get_modes_Cart(struct Normal_Mode NM, int N_modes,
+		    double **Hessian, struct Jacobian J,
+		    struct axe *axe1, int naxe1, struct Reference Ref_kin)
+{
+  float t0=clock();
+  d_Diagonalize(N_modes, Hessian, NM.omega2, NM.Cart, -1);
+  printf("Hessian diagonalization. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
+  t0=clock();
+    
+  //  Convert normal modes
+  struct Tors D_NM;
+  D_NM.N_axes=naxe1;
+  D_NM.N_Cart=NM.N_Cart;
+  D_NM.coeff=malloc(1*sizeof(float));
+  for(int ia=0; ia<NM.N; ia++){
+    // Normalize_vector_weighted(NM.Cart[ia], Ref_kin.mass_coord, N_modes);
+    D_NM.Cart=NM.Cart[ia];
+    D_NM.Tors=NM.Tors[ia];
+    D_NM.MW_Tors=NM.MW_Tors[ia];
+    Convert_cart2torsion(&D_NM, Ref_kin, &J);
+    NM.Tors_frac[ia]=Tors_fraction(&D_NM, Ref_kin.mass_coord);
+  }
+  printf("Torsional and Cartesian modes. Time= %.2lf sec.\n",
+	 (clock()-t0)/nbtops);
+}
+
+int Get_chain_num(int *apo_chain_num, char *apo_chains, int n_apo,
+		   struct chain *chains, int Nchain){
+  int success=1;
+  for(int i=0; i<n_apo; i++){
+    int j;
+    for(j=0; j<Nchain; j++)if(chains[j].label==apo_chains[i])break;
+    if(j==Nchain){
+      printf("ERROR, chain %c not found in PDB\n",apo_chains[i]);
+      success=0;
+    }
+    apo_chain_num[i]=j;
+  }
+  return(success);
+}
+
+int Belong_to_apo(int chain, int *apo_chain_num, int n_apo){
+  for(int j=0; j<n_apo; j++)if(apo_chain_num[j]==chain)return(1);
+  return(0);
+}
+
+struct interaction *Apo_interactions(int *N_int_apo,
+				     struct interaction **Int_list_inter,
+				     int *N_int_inter,
+				     struct interaction *Int_list, int N_int,
+				     atom *atoms, int *apo_chain_num,
+				     int n_apo, int Nchain)
+{
+  struct interaction *Int_list_apo=
+    malloc(N_int*sizeof(struct interaction)), *tmp=Int_list;
+  *N_int_apo=0; *N_int_inter=0;
+  for(int k=0; k<N_int; k++){
+    if(atoms[tmp->i1].chain!=atoms[tmp->i2].chain){
+      int apo1=Belong_to_apo(atoms[tmp->i1].chain, apo_chain_num, n_apo);
+      int apo2=Belong_to_apo(atoms[tmp->i2].chain, apo_chain_num, n_apo);
+      if((apo1 && apo2==0) || (apo1==0 && apo2)){
+	(*N_int_inter)++; goto next_int;
+      }
+    }
+    Int_list_apo[*N_int_apo]=*tmp; (*N_int_apo)++; 
+  next_int:
+    tmp++;
+  }
+  printf("%d interactions belong to the interface "
+	 "between %d chains and %d chains\n",
+	 N_int-*N_int_apo, n_apo, Nchain-n_apo);
+
+  *Int_list_inter=malloc(*N_int_inter*sizeof(struct interaction));
+  int n=0; tmp=Int_list; struct interaction *store=*Int_list_inter;
+  for(int k=0; k<N_int; k++){
+    if(atoms[tmp->i1].chain!=atoms[tmp->i2].chain){
+      int apo1=Belong_to_apo(atoms[tmp->i1].chain, apo_chain_num, n_apo);
+      int apo2=Belong_to_apo(atoms[tmp->i2].chain, apo_chain_num, n_apo);
+      if((apo1 && apo2==0) || (apo1==0 && apo2)){
+	*store=*tmp; store++; n++; 
+      }
+    }
+    tmp++;
+  }
+  if(n!=*N_int_inter){printf("ERROR of Interface interactions\n"); exit(8);}
+
+  return(Int_list_apo);
+}
+
+int Get_interface(int *Cart_interface,
+		  struct interaction *Int_list, int N_int,
+		  atom *atoms, int *apo_chain_num,
+		  int n_apo, struct chain *chains, int Nchain,
+		  int *atom_num, int N_ref, int natoms, int nres)
+{
+  N_res_1=0; N_res_2=0; N_cont_1=0; N_cont_2=0;
+
+  int atom_ref[natoms], i;
+  for(i=0; i<natoms; i++)atom_ref[i]=-1;
+  for(i=0; i<N_ref; i++)atom_ref[atom_num[i]]=i;
+  int res_inter[nres]; for(i=0; i<nres; i++)res_inter[i]=0;
+  for(i=0; i<Nchain; i++){
+    if(Belong_to_apo(i, apo_chain_num, n_apo)){N_res_1+=chains[i].nres;}
+    else{N_res_2+=chains[i].nres;}
+  }
+
+  struct interaction *tmp=Int_list;
+  for(int k=0; k<N_int; k++){
+    if(atoms[tmp->i1].chain!=atoms[tmp->i2].chain){
+      int apo1=Belong_to_apo(atoms[tmp->i1].chain, apo_chain_num, n_apo);
+      int apo2=Belong_to_apo(atoms[tmp->i2].chain, apo_chain_num, n_apo);
+      if(apo1 && apo2){
+	N_cont_1++;
+      }else if(apo1==0 && apo2==0){
+	N_cont_2++;
+      }else if((apo1 && apo2==0)||(apo1==0 && apo2)){
+	res_inter[atoms[tmp->i1].res]=1;
+	res_inter[atoms[tmp->i2].res]=1;
+      }
+    }
+    tmp++;
+  }
+  int nres_inter=0, natom_inter=0, N_Cart_inter=0;
+  for(i=0; i<nres; i++)if(res_inter[i])nres_inter++;
+  for(i=0; i<natoms; i++){
+    if(res_inter[atoms[i].res] && atom_ref[i]>=0){
+      natom_inter++; int k=3*atom_ref[i];
+      for(int j=0; j<3; j++){
+	Cart_interface[N_Cart_inter]=k; N_Cart_inter++; k++;
+      }
+    }
+  }
+
+  printf("Interface between %d chains and %d chains:\n", n_apo, Nchain-n_apo);
+  printf("%d residues out of %d "
+	 "%d atoms out of %d "
+	 "%d Cartesian coordinates out of %d\n",
+	 nres_inter, nres, natom_inter, natoms, N_Cart_inter, 3*N_ref);
+  return(N_Cart_inter);
+}
+
+
+int Compute_sigma2(int *N_disc_freq, int *N_disc_out,
+		   struct Normal_Mode NM,
+		   float *mass_sum_sqrt, int naxe1, int N_Cart,
+		   float COLL_THR)
+{
+  int N_disc_coll=0; *N_disc_freq=0;
+
+  for(int ia=0; ia<NM.N; ia++){
+
+    NM.Max_dev[ia]=
+      Compute_Max_dev(NM.Cart[ia], NM.omega2[ia], N_Cart, mass_sum_sqrt);
+    NM.Tors_coll[ia]=Collectivity_norm2(NM.Tors[ia], naxe1)/naxe1;
+    NM.MW_Tors_coll[ia]=Collectivity_norm2(NM.MW_Tors[ia],naxe1)/naxe1;
+    NM.Cart_coll[ia]=Collectivity_norm2(NM.Cart[ia], N_Cart); //_Renyi
+    if((NM.omega2[ia]<=E_THR)||(NM.Cart_coll[ia] < COLL_THR)){
+      printf("WARNING, discarding mode %d ", ia);
+      printf(" omega^2= %.3g Coll= %.0f RMSD= %.2g\n",
+	     NM.omega2[ia], NM.Cart_coll[ia], NM.Max_dev[ia]);
+      if(NM.Cart_coll[ia] < COLL_THR){N_disc_coll++;}
+      else{(*N_disc_freq)++;}
+      NM.select[ia]=0; NM.sigma2[ia]=0;
+    }else{
+      NM.select[ia]=1;
+      NM.sigma2[ia]=1./NM.omega2[ia];
+    }
+    NM.Cart_coll[ia]/=N_Cart;
+  }
+  printf("%d modes selected\n", NM.N-(N_disc_coll+*N_disc_freq));
+  printf("%d modes discarded for low collectivity ", N_disc_coll);
+  printf("and %d for low frequency\n", *N_disc_freq);
+  int amin=0; while(NM.omega2[amin]<0)amin++;
+  printf("Smallest positive eigenvalue: %.2g a=%d ",NM.omega2[amin],amin);
+  printf("Threshold for selection: %.2g*<omega^2>\n", E_MIN);
+
+  // Ugo_mod 05/21
+  /* float thr_outlier=2.5, thr_mode=0.5;
+     printf("Remove modes that move > %.2f outlier dof (rmsf > %.1f)\n",
+     thr_mode, thr_outlier);
+     *N_disc_out=Filter_modes_outliers(NM, Ref_kin, thr_outlier, thr_mode);
+     printf("%d modes removed because they mostly move outliers\n",
+     *N_disc_out);*/
+
+  return(N_disc_coll);
+}
+
+struct interaction *Unfold_interactions(int *N_int_unfold,
+					struct interaction *Int_list,
+					int N_int, atom *atoms)
+{
+  struct interaction *Int_list_unfold=
+    malloc(N_int*sizeof(struct interaction)), *tmp=Int_list;
+  int DIJ_MIN=2, n=0;
+  for(int k=0; k<N_int; k++){
+    if(atoms[tmp->i1].chain==atoms[tmp->i2].chain &&
+       abs(atoms[tmp->i1].res-atoms[tmp->i2].res)<=DIJ_MIN){
+      Int_list_unfold[n]=*tmp; n++; 
+    }
+    tmp++;
+  }
+  *N_int_unfold=n;
+  return(Int_list_unfold);
+}

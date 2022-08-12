@@ -119,7 +119,7 @@ int Read_sites(int **site_res, int *nres_site, char **chain_res,
   if(N_sites==0)return(0);
   for(i=0; i<N_sites; i++){
     if(description[i]==NULL){
-      description[i]=malloc(10*sizeof(char));
+      description[i]=malloc(20*sizeof(char));
       sprintf(description[i], "site%d", i+1);
     }else{
       char *ptr=description[i];
@@ -297,7 +297,9 @@ int Read_site(char *resnum, char *resnam, char *reschain,
   sscanf(string+5, "%d", &inum);
   //sprintf(resnum, "%4d%c", inum, string[9]); 
   sprintf(resnum, "%d", inum);
-  if(string[9]!=' ')sprintf(resnum, "%s%c", resnum, string[9]);
+  if(string[9]!=' '){
+    char tmp[2]; sprintf(tmp, "%c", string[9]); strcat(resnum, tmp);
+  }
   if(*c=='*')return(0);
   while(*c!='\0'){if(*c==*reschain)return(0); c++;}
   if(VERBOSE)
@@ -382,7 +384,8 @@ void Eigen_directions(float *d2, float *lambda, float **v,
 int New_site(int *nsite, int *sres, int *nres_site, char **description,
 	      int NMAX)
 {
-  if(*nsite>=0)nres_site[*nsite]=*sres; *sres=0; (*nsite)++;
+  if(*nsite>=0)nres_site[*nsite]=*sres;
+  *sres=0; (*nsite)++;
   if(*nsite > NMAX){
     printf("ERROR, too many sites > %d\n", NMAX); return(-1);
   }

@@ -1,9 +1,12 @@
-int num_BB; //=5
-char BB_name[8][3]; // N CA C CB O
+#ifndef ATOMS_H
+#define ATOMS_H
+
+extern int num_BB; //=5
+extern char BB_name[8][3]; // N CA C CB O
 //                       C-N    N-CA   CA-C   CA-CB  C-O  
-float BB_length[8]; //={1.3301,1.4572,1.5236,1.5319,1.2316};
+extern float BB_length[8]; //={1.3301,1.4572,1.5236,1.5319,1.2316};
 //                    CA-C-N C-N-CA N-CA-C N-CA-CB CA-C-O  
-float BB_angle[8]; //={1.1091,1.0196,1.2018,1.2162,1.0359};
+extern float BB_angle[8]; //={1.1091,1.0196,1.2018,1.2162,1.0359};
 
 int Atom_type(char *name);
 
@@ -27,3 +30,5 @@ int Atom_type(char *name);
   TRP  CG  CD1 CD2 NE1=CE2 CE3 CZ2 CZ3=CH2 (CH2 connected to both CZ2,CZ3)   
   TYR  CG  CD1 CD2 CE1 CE2=CZ  OH  (CZ connected to both CE1, CE2)
  */
+
+#endif

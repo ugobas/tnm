@@ -10,7 +10,7 @@
 
 // char TYPE='C'; // C: return(Cv_fit) M: return(cis_mu) O: OLS L=Use Lambda
 
-int P_FIT=0; // Print fit parameters?
+int P_FIT=1; // Print fit parameters?
 int Nprint=10;
 float csi_inf;
 
@@ -70,7 +70,7 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
   double **C=malloc(Npar*sizeof(double *));
   for(a=0; a<Npar; a++){
     C[a]=malloc(Npar*sizeof(double));
-    for(b=0; b<Npar; b++)C[a][b]=0;
+    for(b=0; b<=a; b++)C[a][b]=0;
   }
   for(i=0; i<N; i++){
     float *x=X[i];
@@ -91,8 +91,8 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
   for(a=0; a<Npar; a++){
     if(VBS)printf("Var%d sqrt(C_aa)=%.3g\n", a, D[a]);
     if(D[a]<=0){
-      printf("ERROR, variable %d has zero or negative variance\n", a+1);
-      nan=1;
+      printf("ERROR, variable %d has zero or negative variance %.2g\n",
+	     a+1, D[a]); nan=1;
     }
   }
   if(nan){
@@ -157,9 +157,11 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
   sprintf(namefile, "%s.dat", nameout);
   FILE *file_out=fopen(namefile, "w");
   if(VBS)printf("Writing %s\n", namefile);
-  fprintf(file_out,
-	  "# Lambda GenCrossVal Error dE/dL d(LS)/dL Sh LF(csi) LF(inf)\n");
+  if(Npar>12)P_FIT=0;
   fprintf(file_out, "# N= %d Npar= %d\n", N, Npar); //RangeRisk
+  fprintf(file_out, "# Lambda Error dE/dL LF(csi) LF(inf)");
+  if(P_FIT)for(a=0; a<Npar; a++)fprintf(file_out, "\tA%d", a);
+  fprintf(file_out,"\n");
  
   struct ridge_fit fit; fit.A=malloc(Npar*sizeof(float));
   float E0=Compute_error(0, eval, ya2, Y2, Npar);
@@ -228,7 +230,8 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
     Get_max(&max_LF_inf, &L_LF_inf, fit.LF_inf, fit.Lambda, j);
     Get_max(&max_LF_mu, &L_LF_mu, fit.LF_mu, fit.Lambda, j);
     // Select last maximum of LF_csi;
-    if(fit.LF_csi > LF_csi_old)L_LF_csi=fit.Lambda; LF_csi_old=fit.LF_csi;
+    if(fit.LF_csi > LF_csi_old)L_LF_csi=fit.Lambda;
+    LF_csi_old=fit.LF_csi;
 
     if(VBS){
       fprintf(file_out,
@@ -259,10 +262,10 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
 
   // Print results of the fits
   fprintf(file_out, "# Normalization of the error: %.2f\n", sum_y2/N);
-  fprintf(file_out, "# force=1/a(0) Lambda Rel.error ");
+  /*fprintf(file_out, "# force=1/a(0) Lambda Rel.error ");
   fprintf(file_out, "Renyi2 Shannon Lambda*F(csi) Lambda*F(inf) fit");
   if(P_FIT)for(a=0; a<Npar; a++)fprintf(file_out, "\tvar%d", a+1);
-  fprintf(file_out, "\n");
+  fprintf(file_out, "\n");*/
 
   if(0){
     // No rigid body
@@ -475,8 +478,8 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
 
   free(fit.A);
   free(sum_x);
-  for(a=0; a<Npar; a++)free(evec[a]); free(evec);
-  for(a=0; a<Npar; a++)free(C[a]); free(C);
+  for(a=0; a<Npar; a++){free(evec[a]);} free(evec);
+  for(a=0; a<Npar; a++){free(C[a]);} free(C);
   fclose(file_out);
 
   return(r);
@@ -612,9 +615,8 @@ void Print_make_fit(struct ridge_fit *F, float Lambda, char *what,
   F->dof[2]=1-F->dof[0]-F->dof[1]; // Rotations*/
   // Print
   fprintf(file_out,
-	  "#\t%.3g\t%.3g\t%.4g\t%.3g\t%.4g\t%.4g\t%.4g\t%12s",
-	  1./F->A[0], F->Lambda, F->E/var_y, F->R2, F->Sh,
-	  F->LF_csi, F->LF_inf, what);
+	  "#\t%.3g\t%.3g\t%.3g\t%.3g\t%.3g\t%10s",
+	  F->Lambda, F->Cv, F->E/var_y, F->LF_csi, F->LF_inf, what);
   if(P_FIT)for(a=0; a<Npar; a++)fprintf(file_out, "\t%.3g", F->A[a]);
   fprintf(file_out, "\n");
 

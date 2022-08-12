@@ -283,7 +283,7 @@ void Select_modes(int *selected, double *eigen_va, float E_MIN, int N)
      int n=0; */
   float E_THR=E_MIN; int i;
   double e=0; for(i=1; i<=N; i++)e+=eigen_va[i];
-  if(e<0)e=-e; E_THR*=(e/N);
+  if(e<0){e=-e;} E_THR*=(e/N);
   for(i=1; i<=N; i++){
     if(eigen_va[i]<E_THR){
       selected[i]=0;
@@ -301,7 +301,7 @@ void Select_modes_coll(int *selected, double *eigen_va, double **eigen_vt,
      int n=0; */
   float E_THR=E_MIN; int i, j;
   double e=0; for(j=1; j<=N; j++)e+=eigen_va[j];
-  if(e<0)e=-e; E_THR*=(e/N);
+  if(e<0){e=-e;} E_THR*=(e/N);
   float E_THR2=E_THR*0.001;
   for(i=1; i<=N; i++){
     selected[i]=1;

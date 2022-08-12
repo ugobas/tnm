@@ -11,16 +11,37 @@
 #include <stdio.h>
 #define DEBUG 0
 
-int PDB_ali(int *seq_id, int nali,
+int Invert_dimer=1; // Align A with B and B with A in dimers
+
+
+static void Superimpose_cluster(struct chain *chains1, int Nchain1,
+				struct chain *chains2, int Nchain2,
+				int *i1cl, int n1cl, int *i2cl, int n2cl,
+				int ***ali_all, int **nali);
+static void Superimpose_centers(int **ichain2, int ncompl,
+				struct chain *chains1, int Nchain1,
+				struct chain *chains2, int Nchain2,
+				int *i1cl, int *i2cl, 
+				int ***ali_all, int **nali);
+static float Superimpose_complex(int **ichain2, int ncompl,
+				 struct chain *chains1, int Nchain1,
+				 struct chain *chains2, int Nchain2,
+				 int *i1cl, int *i2cl, 
+				 int ***ali_all, int **nali);
+
+static void Test_chains(int *icl, int ncl,
+			struct chain *chains, int Nchain, int n);
+
+static int PDB_ali(int *ali, int *seq_id, int nali,
 	    char *ali1, struct chain *chp1, int n1,
 	    char *ali2, struct chain *chp2, int n2);
-int Max_length(struct chain *chains, int Nchain);
-void Match_chains_by_length(int *match1,
+static int Max_length(struct chain *chains, int Nchain);
+static void Match_chains_by_length(int *match1,
 			    struct chain *chains1, int Nchain1,
 			    struct chain *chains2, int Nchain2);
-void Best_match(int *match1, int *free2,
-		struct chain *chains1, int Nchain1,
-		struct chain *chains2, int Nchain2);
+static void Best_match(int *match1, int *free2,
+		       struct chain *chains1, int Nchain1,
+		       struct chain *chains2, int Nchain2);
 
 int Align_chains(int *Nmut, char *AAwt, int *Posmut, char *AAmut,
 		 struct Ali_score *ali, int *last_ali_res,
@@ -30,166 +51,204 @@ int Align_chains(int *Nmut, char *AAwt, int *Posmut, char *AAmut,
 		 struct chain *chains2, int Nchain2,
 		 struct residue *seq2, char *pdbid2)
 {
+  float seqid_min=0.4, si_tol=0.05; // seqid_max=0.9;
+
   // Sequence alignment parameters
   int VBS=0;  // Verbose:
   int IDE=1;  // Use identity to score alignment
   int GAP=7;  // Gap opening penalty
 
   *Nchain=Nchain1;
-  if(Nchain2!=Nchain1){
-    if(Nchain2<*Nchain)*Nchain=Nchain2;
+  if(Nchain2<Nchain1){
     printf("WARNING, different number of chains: ");
     printf("%d (%s) and %d (%s)\n", Nchain1, pdbid1, Nchain2, pdbid2);
+    if(Nchain2<Nchain1){printf("Exiting the program\n"); exit(8);}
     printf("Considering only the %d best matching chains\n", *Nchain);
-    //exit(8);
   }
 
   ali->mammoth=0;
   ali->aligned=0;
   ali->ngaps=0;
   ali->seq_id=0;
-  *Nmut=0;
 
-  int n2max=Max_length(chains2, Nchain2);
-  int matched[Nchain2]; for(int i=0; i<Nchain2; i++)matched[i]=0;
+  //Cluster chains_by_sequence identity
+  // Alignments
+  int nmax=Max_length(chains1, Nchain1)+Max_length(chains2, Nchain2);
+  int **ali_all[Nchain1], *nali[Nchain1];
+  int seqid[Nchain1][Nchain2];
 
-  //int match_chain[Nchain1];
-  //Match_chains_by_length(match_chain, chains1, Nchain1, chains2, Nchain2);
+  // Clusters
+  int ic1, ic2, i;
+  int ncl=0, n1cl[Nchain1], n2cl[Nchain1],*i1cl[Nchain1], *i2cl[Nchain1];
+  for(ic1=0; ic1<Nchain1; ic1++){
+    ali_all[ic1]=malloc(Nchain2*sizeof(int *));
+    nali[ic1]=malloc(Nchain2*sizeof(int));
+    i1cl[ic1]=malloc(Nchain1*sizeof(int));
+    i2cl[ic1]=malloc(Nchain2*sizeof(int));
+  }
+  int cl2[Nchain2]; //cl1[Nchain1], 
+  for(i=0; i<Nchain1; i++){n1cl[i]=0; n2cl[i]=0;}  //cl1[i]=-1; 
+  for(i=0; i<Nchain2; i++)cl2[i]=-1;
 
-  int NMUT=1000;
-  int nres1=0, nres2=0;
-  int ichain, jchain, i;
-  for(ichain=0; ichain< Nchain1; ichain++){
-    struct chain *chp1=chains1+ichain;
+  for(ic1=0; ic1< Nchain1; ic1++){
+    struct chain *chp1=chains1+ic1;
     int n1=chp1->nres;
-    chp1->alignres=malloc(n1*sizeof(int));
-    for(i=0; i<n1; i++)chp1->alignres[i]=-1;
-    int jopt=-1, dL_opt=1000, seq_id_opt=0, nali_opt=0;
-    char ali1_opt[(n1+n2max)], ali2_opt[(n1+n2max)];
+    chp1->match=-1;
 
-    for(jchain=0; jchain< Nchain2; jchain++){
-      if(matched[jchain])continue;
-      struct chain *chp2=chains2+jchain;
-      int n2=chp2->nres;
+    int seqid_opt=0, ic2_opt=-1;      
+    for(ic2=0; ic2< Nchain2; ic2++){
+      struct chain *chp2=chains2+ic2;
+      int n2=chp2->nres, na;
 
       printf("Aligning chains %d %c prot1 L=%d and %d %c prot2 L=%d\n",
-	     ichain, chp1->label, n1, jchain, chp2->label, n2);
+	     ic1, chp1->label, n1, ic2, chp2->label, n2);
 
-      // Make alignment
-      //for(i=0; i<n1; i++)aligntmp[i]=-1;
-      //float psi;
-      /*if(SEQID_THR > 1.0){
-	ali->mamm_score=
-	Mammoth_ali(&aligned, &seq_id, &psi, chp1->alignres,
-	chp1, seq1, chp2, seq2);
-	ali->mammoth=1;
-	ali->psi+=sqrt(n1*n2)*psi;
-	goto update_chain;
-	}*/	
-      // Alignment based on sequence
-      //ali->seq_id=
-      //NeedlemanWunsch(chp1->seq,chp2->seq,n1,n2,"BLOSUM62",chp1->alignres);
+      int nmax_seqres=chp1->N_seqres+chp1->N_seqres;
+      char ali1[nmax_seqres], ali2[nmax_seqres];
 
-      char ali1[(n1+n2)], ali2[(n1+n2)];
-      int seq_id=0, nali=0;
-      int al=alignNW(chp1->seqres, chp1->N_seqres,
-		     chp2->seqres, chp2->N_seqres,
-		     VBS,IDE,GAP, ali1, ali2, &nali);
-      if(al==0){printf("ERROR, alignment failed\n"); exit(8);}
-
-      nali=PDB_ali(&seq_id, nali, ali1, chp1, n1, ali2, chp2, n2);
-      printf("Seq.id= %d %d total residues\n", seq_id, nali);
-
-      // Choose matching chain based on alignment or length
-      if(seq_id > 0.3){
-	if(seq_id > seq_id_opt){
-	  seq_id_opt=seq_id; nali_opt=nali;
-	  jopt=jchain;
-	  for(i=0; i<nali; i++){
-	    ali1_opt[i]=ali1[i];
-	    ali2_opt[i]=ali2[i];
-	  }
-	  if(seq_id_opt > 0.9*n1)break;
+      if(n1 <= MIN_ALI_LEN){
+	// Trivial alignment for peptides or nucleic acids
+	printf("Trivial alignment for peptide or nucleic acid\n");
+	na=n1;
+	for(i=0; i<n1; i++){
+	  ali1[i]=chp1->seq[i];
+	  if(i<n2){ali2[i]=chp2->seq[i];}
+	  else{ali2[i]='-';}
 	}
-      }else if(jopt<0){
-	int dL=abs(n1-n2);
-	if(dL < dL_opt){jopt=jchain; dL_opt=dL;}
+      }else{
+	int al=alignNW(chp1->seqres, chp1->N_seqres,
+		       chp2->seqres, chp2->N_seqres,
+		       VBS,IDE,GAP, ali1, ali2, &na);
+	if(al==0){printf("ERROR, alignment failed\n"); exit(8);}
       }
-    } // end jchain
 
-    if(jopt<0){
-      printf("ERROR, could not match chain %d\n", ichain);
-      break;
+      // Transform the alignment of seqres into an alignment of
+      // structured residues (seq)
+      ali_all[ic1][ic2]=malloc(nmax*sizeof(int));
+      nali[ic1][ic2]=PDB_ali(ali_all[ic1][ic2], &(seqid[ic1][ic2]),
+			     na, ali1, chp1, n1, ali2, chp2, n2);
+ 
+      printf("Seq.id= %d alignment length %d\n",
+	     seqid[ic1][ic2],nali[ic1][ic2]);
+
+      // Best matching chain
+      if(seqid[ic1][ic2] > seqid_opt){
+	seqid_opt=seqid[ic1][ic2]; ic2_opt=ic2;
+      }
+    } // end ic2
+
+    printf("Best match: chain %d seqid= %d n=%d chain %d",
+	   ic1, chp1->nres, seqid_opt, ic2_opt);
+    if(ic2_opt>=0)printf(" n=%d\n", chains2[ic2_opt].nres);
+    if(ic2_opt<0 || (seqid_opt<seqid_min && n1>MIN_ALI_LEN)){
+      // If short chain (peptide) accept the match even for low identity
+      printf("\nERROR, could not reliably match chain %d\n", ic1);
+      exit(8);
     }
 
-    matched[jopt]=1;
-    chp1->match=jopt;
-    struct chain *chp2=chains2+jopt;
-    int n2=chp2->nres;
-    chp2->match=ichain;
-    nres1+=n1; nres2+=n2;
-
-    if((n1 < MIN_ALI_LEN)||(n2 < MIN_ALI_LEN)){
-      // Trivial alignment for peptides or nucleic acids
-      nali_opt=n1; if(n2>nali_opt)nali_opt=n2;
-      for(i=0; i<nali_opt; i++){
-	if(i<n1){ali1_opt[i]=chp1->seq[i];}
-	else{ali1_opt[i]='-';}
-	if(i<n2){ali2_opt[i]=chp2->seq[i];}
-	else{ali2_opt[i]='-';}
-      }
-    }
-
-    // Print alignment
-    printf("Protein_1: ");
-    for(i=0; i<nali_opt; i++)printf("%c", ali1_opt[i]); printf("\n");
-    printf("Protein_2: ");
-    for(i=0; i<nali_opt; i++)printf("%c", ali2_opt[i]); printf("\n");
-
-    // Store alignment
-    int seq_id=0, aligned=0;
-    int i1=0, i2=0, gap=1;
-    for(i=0; i<nali_opt; i++){
-      if((ali1_opt[i]!='-')||(ali2_opt[i]!='-')){
-	if((ali1_opt[i]==ali2_opt[i])&&(ali1_opt[i]!='-')){
-	  seq_id++;
-	}else{
-	  Posmut[*Nmut]=i1; AAmut[*Nmut]=ali2_opt[i];
-	  if(*Nmut<NMUT)AAwt[*Nmut]=ali1_opt[i];
-	  (*Nmut)++;
-	} 
-	aligned++;
-      }
-      if(ali1_opt[i]!='-'){
-	if(gap)gap=0;
-	if(ali2_opt[i]!='-'){chp1->alignres[i1]=i2;}
-	else{chp1->alignres[i1]=-1;}
-	i1++; 
-      }else if(gap==0){
-	ali->ngaps++; gap=1;
-      }
-      if(ali2_opt[i]!='-')i2++;
-    }
-
-      /* float ss=(float)seq_id/(aligned);
+    /* float ss=(float)seqid_opt/n1;
        if(ss < SEQID_THR){
        printf("WARNING! Low sequence identity %.1f\%\n", ss*100);
        printf("Performing structure alignment with Mammoth\n");
        ali->mamm_score=
-       Mammoth_ali(&aligned, &seq_id, &psi, chp1->alignres,
+       Mammoth_ali(&aligned, &seqid_opt, &psi, chp1->alignres,
        chp1, seq1, chp2, seq2);
        ali->mammoth=1;
        ali->psi+=sqrt(n1*n2)*psi;
        }*/
+    
+    int icl, seqid_thr;
+    if(cl2[ic2_opt]>=0){icl=cl2[ic2_opt];} // already clustered
+    else{icl=ncl; ncl++;}
+    if(seqid_opt>=seqid_min){seqid_thr=seqid_opt-si_tol;}
+    else{seqid_thr=seqid_min;}
+
+    // Set clusters
+    i1cl[icl][n1cl[icl]]=ic1; n1cl[icl]++; //cl1[ic1]=icl; 
+    for(ic2=0; ic2< Nchain2; ic2++){
+      if((seqid[ic1][ic2]>=seqid_thr)&&(cl2[ic2]!=icl)){
+	cl2[ic2]=icl; i2cl[icl][n2cl[icl]]=ic2; n2cl[icl]++;
+      }
+    }
+  } // end ic1
+
+  if(ncl==0){
+    printf("ERROR, no sequence clusters could be found\n"); exit(8);
+  }
+
+  for(int ic=0; ic<ncl; ic++){
+    Superimpose_cluster(chains1, Nchain1, chains2, Nchain2,
+			i1cl[ic], n1cl[ic], i2cl[ic], n2cl[ic],
+			ali_all, nali);
+  }
+
+
+  *Nmut=0;
+  int nres1=0, nres2=0;
+  // Store alignments
+  for(ic1=0; ic1<Nchain1; ic1++){
+    struct chain *chp1=chains1+ic1;
+    int n1=chp1->nres;
+    ic2=chp1->match;
+    if(ic2<0){
+      printf("ERROR, chain %d %c n=%d could not be superimposed\n",
+	     ic1, chp1->label, n1); exit(8);
+    }
+    
+    chp1->alignres=malloc(n1*sizeof(int));
+   
+    struct chain *chp2=chains2+ic2;
+    int n2=chp2->nres;
+    chp2->match=ic1;
+    nres1+=n1; nres2+=n2;
+    int *al=ali_all[ic1][ic2];
+   
+    // Print alignment
+    printf("Protein_1: ");
+    for(i=0; i<n1; i++)printf("%c", chp1->seq[i]);
+    printf("\nProtein_2: ");
+    for(i=0; i<n1; i++){
+      if(al[i]>=0){printf("%c", chp2->seq[al[i]]);}
+      else{printf("-");}
+    }
+    printf("\n");
+    
+    // Store alignment, count mutations
+    int seq_id=0, ngap=0, gap=1;
+    printf("Alignment: ");
+    for(i=0; i<n1; i++){
+      if(al[i]>=0){
+	if(gap)gap=0;
+	if(chp1->seq[i]==chp2->seq[al[i]]){
+	  seq_id++;
+	}else{ // Mutation
+	  Posmut[*Nmut]=i;
+	  AAwt[*Nmut]=chp1->seq[i];
+	  AAmut[*Nmut]=chp2->seq[al[i]];
+	  (*Nmut)++;
+	} 
+	chp1->alignres[i]=al[i];
+	printf("%c",chp2->seq[al[i]]);
+      }else{
+	chp1->alignres[i]=-1;
+	printf("-");
+	ngap++;
+	if(gap==0){ali->ngaps++; gap=1;}
+      }
+    }
+    printf("\n");
 
     if(gap)ali->ngaps--; 
     ali->seq_id+=seq_id;
+    int aligned=n1-ngap;
     ali->aligned+=aligned;
+  } // end ic1
 
+  printf("%d mutations: ", *Nmut); int NMUT=1000;
+  for(i=0; i<*Nmut; i++){
+    if(*Nmut==NMUT)break;
+    printf(" %c%s%c", AAwt[i],seq1[Posmut[i]].pdbres,AAmut[i]);
   }
-  printf("%d mutations: ", *Nmut);
-  for(i=0; i<*Nmut; i++)
-    if(*Nmut<NMUT)printf(" %c%s%c", AAwt[i],seq1[Posmut[i]].pdbres,AAmut[i]);
   printf("\n");
   
   ali->seq_id/=ali->aligned; ali->seq_id*=100;
@@ -199,8 +258,8 @@ int Align_chains(int *Nmut, char *AAwt, int *Posmut, char *AAmut,
   ali->aligned/=nres1;
 
   ali->alignres=malloc(nres1*sizeof(int)); i=0;
-  for(ichain=0; ichain< *Nchain; ichain++){
-    struct chain *chp1=chains1+ichain;
+  for(ic1=0; ic1< *Nchain; ic1++){
+    struct chain *chp1=chains1+ic1;
     int n1=chp1->nres, i1, ini2=(chains2+chp1->match)->ini_res;
     for(i1=0; i1<n1; i1++){
       if(chp1->alignres[i1]>=0){
@@ -217,6 +276,14 @@ int Align_chains(int *Nmut, char *AAwt, int *Posmut, char *AAmut,
     if(ali->alignres[i]>=0){
       *last_ali_res=i+1; break;
     }
+  }
+
+  for(ic1=0; ic1<Nchain1; ic1++){
+    for(i=0; i<Nchain2; i++)free(ali_all[ic1][i]);
+    free(ali_all[ic1]);
+    free(nali[ic1]);
+    free(i1cl[ic1]);
+    free(i2cl[ic1]);
   }
   return 0;
 }
@@ -345,7 +412,7 @@ int Align_atoms(atom *atoms1, atom *atoms2,          // Output
   for(i1=ini1; i1<(ini1+natoms1); i1++){
     atom1=atoms1+i1;
     int res2=alignres[atom1->res-ini_res1];
-    if(res2<0)continue; res2+=ini_res2;
+    if(res2<0){continue;} res2+=ini_res2;
     int iali=-1, i2=ares2;
     atom *atom2=atoms2+ares2; ;
     while((atom2->res<res2)&&(i2<i2max)){atom2++; i2++;}
@@ -391,11 +458,20 @@ int Align_atoms(atom *atoms1, atom *atoms2,          // Output
   return(n);
 }
 
-int PDB_ali(int *seq_id, int nali,
+
+int Max_length(struct chain *chains, int Nchain)
+{
+  int nmax=0;
+  for(int i=0; i<Nchain; i++)if(chains[i].nres>nmax)nmax=chains[i].nres;
+  return(nmax);
+}
+
+int PDB_ali(int *ali, int *seq_id, int nali,
 	    char *ali1, struct chain *chp1, int n1,
 	    char *ali2, struct chain *chp2, int n2)
 {
   int i1=0, i2=0, j1, j2, k=0; *seq_id=0;
+  for(int i=0; i<n1; i++)ali[i]=-1;
   for(int i=0; i<nali; i++){
     // seq.1
     if(ali1[i]!='-'){j1=chp1->ali_seqres[i1]; i1++;}
@@ -407,15 +483,103 @@ int PDB_ali(int *seq_id, int nali,
     else{j2=-1;}
     if(j2>=0){ali2[k]=chp2->seq[j2];}
     else{ali2[k]='-';}
-    if((ali1[k]!='-')&&(ali1[k]==ali2[k]))(*seq_id)++;
+    if(j1>=0){
+      ali[j1]=j2;
+      if(ali1[k]==ali2[k])(*seq_id)++;
+    }
     if((j1>=0)||(j2>=0)){k++;}
   }
   return(k);
 }
 
-int Max_length(struct chain *chains, int Nchain)
+void Superimpose_cluster(struct chain *chains1, int Nchain1,
+			 struct chain *chains2, int Nchain2,
+			 int *i1cl, int n1cl, int *i2cl, int n2cl,
+			 int ***ali_all, int **nali)
 {
-  int nmax=0;
-  for(int i=0; i<Nchain; i++)if(chains[i].nres>nmax)nmax=chains[i].nres;
-  return(nmax);
+  if(n1cl!=n2cl){
+    printf("WARNING, different number of chains in clusters of PDB1 (%d) "
+	   "and PDB2 (%d)\n", n1cl, n2cl);
+    if(n1cl!=1){printf("Exiting\n"); exit(8);}
+  }
+  Test_chains(i1cl, n1cl, chains1, Nchain1, 1);
+  Test_chains(i2cl, n2cl, chains2, Nchain2, 2);
+
+  if(n1cl==1){chains1[i1cl[0]].match=i2cl[0]; return;}
+  if(Invert_dimer && n1cl==2 && n2cl==2){
+    chains1[i1cl[0]].match=i2cl[1];
+    chains1[i1cl[1]].match=i2cl[0]; return;
+  }
+  for(int i=0; i<n1cl; i++)chains1[i1cl[i]].match=i2cl[i];
+  return;
+
+  int ncompl=n1cl, *ichain2[ncompl], i;
+  for(i=0; i<ncompl; i++)ichain2[i]=malloc(ncompl*sizeof(int));
+
+  if(ncompl==2 || ncompl>=7){
+    // Circular permutations
+    for(i=0; i<ncompl; i++){
+      int ij=i, j;
+      for(j=0; j<ncompl; j++){
+	ichain2[i][j]=i2cl[ij]; ij++; if(ij==ncompl)ij=0;
+	if(ichain2[i][j]<0 || ichain2[i][j]>=Nchain2){
+	  printf("ERROR in circular perm., wrong chain %d\n",
+		 ichain2[i][j]); exit(8);
+	}
+      }
+    }
+  }else{
+    Superimpose_centers(ichain2, ncompl, chains1, Nchain1, chains2, Nchain2,
+			i1cl, i2cl, ali_all, nali);
+  }
+
+  // Find largest RMSD
+  float RMSD_max=-1; int imax=-1;
+  for(i=0; i<ncompl; i++){
+    float RMSD=Superimpose_complex(ichain2, ncompl, chains1, Nchain1,
+				   chains2,Nchain2,i1cl,i2cl, ali_all, nali);
+    if(RMSD>RMSD_max){RMSD_max=RMSD; imax=i;}
+  }
+  if(imax<0){
+    printf("ERROR, optimal superimposition could not be found\n");
+    exit(8);
+  }
+
+  for(i=0; i<n1cl; i++){
+    chains1[i1cl[i]].match=ichain2[imax][i];
+  }
+  for(i=0; i<ncompl; i++)free(ichain2[i]);
+
+  return;
+}
+
+void Test_chains(int *icl, int ncl,struct chain *chains, int Nchain, int n)
+{
+  int i, j;
+  for(j=0; j<ncl; j++){
+    i=icl[j];
+    if(i<0 || i>=Nchain){
+      printf("ERROR, wrong index of chain in PDB%d: %d not in [0,%d]\n",
+	     n, i, Nchain); exit(8);
+    }
+  }
+}
+
+void Superimpose_centers(int **ichain2, int ncompl,
+			 struct chain *chains1, int Nchain1,
+			 struct chain *chains2, int Nchain2,
+			 int *i1cl, int *i2cl, 
+			 int ***ali_all, int **nali)
+{
+
+}
+
+float Superimpose_complex(int **ichain2, int ncompl,
+			  struct chain *chains1, int Nchain1,
+			  struct chain *chains2, int Nchain2,
+			  int *i1cl, int *i2cl, 
+			  int ***ali_all, int **nali)
+{
+  float RMSD=0;
+  return(RMSD);
 }

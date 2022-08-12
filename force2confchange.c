@@ -35,7 +35,7 @@ int Force2Confchange(float *atom_move, char *FILE_FORCE,
   atom atom_read[natoms1], *atom;
   struct residue seq[nres1];
   printf("Reading force in file %s\n", FILE_FORCE);
-  nres=Read_coord(FILE_FORCE, &nmr, seq, atom_read, chain1, &ANISOU);
+  nres=Read_coord(FILE_FORCE, &nmr, seq, atom_read, chain1, &ANISOU, NULL);
   if(nres<0)return(-1); // file not found
   if(nres!=nres1){
     printf("ERROR, wrong number of residues in force file:");
@@ -51,8 +51,8 @@ int Force2Confchange(float *atom_move, char *FILE_FORCE,
   for(i=0; i<3*N_ref; i++)Force_input_cart[i]=0;
   for(i=0; i<N_ref; i++){
     atom=Find_atom_seq(seq, nres, atoms1[atom_num1[i]]);
-    if(atom==NULL)continue; k=3*i;
-    for(j=0; j<3; j++){Force_input_cart[k]=atom->r[j]; k++;}
+    if(atom==NULL)continue;
+    k=3*i; for(j=0; j<3; j++){Force_input_cart[k]=atom->r[j]; k++;}
   }
   // End read force
 

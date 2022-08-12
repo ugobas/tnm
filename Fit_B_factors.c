@@ -10,21 +10,25 @@
 #include "nma_para.h"
 #include "Fit_B.h"
 
-int VBS=0;
 
+int VBS=0;
+float Compute_correlation(float **Cart_mode, float *sigma2,
+			  int N_modes, int i1, int i2);
 void Print_data(float **X, float *Y, int N, int Npar, char *nameout);
 int Find_outliers_Z(int *outlier, float *y, int N, float sig);
 int Find_outliers_mean(int *outlier, float *y, int N, float sig);
 
 
-float Fit_fluctuations(double *mass_sum, float *B_TNM,
-		       float *RMSD_NM, char *out, int anharmonic,
-		       struct Normal_Mode NM,
+float Fit_fluctuations(int FIT_B, float *B_TNM,
+		       float *RMSD_NM, char *out,
+		       float *Temp_comp, float Temp,
+		       int anharmonic, struct Normal_Mode NM,
 		       struct Reference Ref_kin, char *REF,
 		       struct residue *seq1, int nres1, int nmr1,
 		       atom *atoms1, char *nameout1,
 		       float *factor_B, int *outlier_B)
 {
+
   float *sigma2; char nameout[100];
   if(anharmonic==0){
     sigma2=NM.sigma2;
@@ -35,10 +39,9 @@ float Fit_fluctuations(double *mass_sum, float *B_TNM,
   }
 
   int i, k, N_ref=Ref_kin.N_ref;
-  // Mass of the protein
-  *mass_sum=0; for(i=0; i<N_ref; i++)*mass_sum+=Ref_kin.mass_atom[i];
 
-  double bsum=0, bsum2=0, mass_CA=0; 
+
+  double bsum=0, bsum2=0; // mass_CA=0; 
   double pi=3.1415, norm_B=8.0*pi*pi/3;
   char BSEL[4]="CA";
   if(strcmp(REF, "CB")==0)strcpy(BSEL, "CB");
@@ -52,18 +55,18 @@ float Fit_fluctuations(double *mass_sum, float *B_TNM,
     Bref[Na]=Ref_kin.atom_num[i];
     B_TNM[Na]=Compute_correlation(NM.Cart,sigma2,NM.N,i,i);
     //if(ANM)B_TNM[Na]/=Ref_kin.mass_atom[i];
+    //mass_CA+=Ref_kin.mass_atom[i];
     B_exp[Na]=atm->B_factor/norm_B; //
     bsum+=B_exp[Na]; bsum2+=B_exp[Na]*B_exp[Na];
     for(k=0; k<3; k++){Xref[j]=atm->r[k]; j++;}
-    mass_CA+=Ref_kin.mass_atom[i];
     Na++;
   }
   bsum/=Na; bsum2=(bsum2/Na-bsum*bsum);
-  float RMSD_crys=sqrt(bsum);
+  float RMSD_crys=sqrt(bsum), RMSD_crys_int=-1;
   printf("%d %s atoms selected in %d residues\n", Na, BSEL, nres1);
-  printf("RMSD of fluctuations (exp)= %.3f\n", RMSD_crys);
+  printf("RMSD of fluctuations (B fact tot)= %.3f\n", RMSD_crys);
 
-  char ridge='M';
+  char ridge='C'; //'M'
   float bsmall=0.01, r_B=0, slope_B=0, slope_NoRot=0, f_dof[3]; 
   f_dof[0]=0; f_dof[1]=0; f_dof[2]=0;
   for(i=0; i<nres1; i++)outlier_B[i]=0; //modyves
@@ -74,23 +77,25 @@ float Fit_fluctuations(double *mass_sum, float *B_TNM,
     free(B_exp);
     B_exp=NULL;
     RMSD_crys=0;
-    FIT_B=-1; // YYY this is probably necessary ??
+    // FIT_B=-1; // YYY this is probably necessary ?? Ugo: This is wrong
   }else{
     // Fit B factors
-    B_pred_all=malloc(nres1*sizeof(float)); float offset=0;
+    // Fit without rotations
+    float offset=0, r=Corr_coeff(B_TNM, B_exp, Na, &slope_NoRot, &offset);
+    printf("r(B_pred,B_exp)= %.3f offset= %.3f force const factor=%.4g",
+	   r, offset, 1./slope_NoRot);
+    printf(" (2 var fit)\n");
+    // Fit with rotations
+    B_pred_all=malloc(nres1*sizeof(float));
     slope_B=Bfactors_fit(&r_B, outlier_B, f_dof, B_pred_all, B_exp, B_TNM,
 			 Xref, Na, nameout1, ridge);
-    printf("B-factor fit, slope= %.3g\n", slope_B);
+    printf("B-factor fit with rotations, force const factor= %.3g\n", slope_B);
+    RMSD_crys_int=sqrt(RMSD_crys*RMSD_crys*f_dof[0]);
     if((r_B<R_MIN)||(slope_B<SLOPE_MIN)){
       printf("WARNING, r_B= %.2f or Bfact slope= %.2g too small\n",
 	     r_B,slope_B); 
       if(FIT_B>0)FIT_B=0;
     }
-    // Fit without rotations
-    float r=Corr_coeff(B_TNM, B_exp, Na, &slope_NoRot, &offset);
-    printf("r(B_pred,B_exp)= %.3f offset= %.3f force const=%.4g",
-	   r, offset, 1./slope_NoRot);
-    printf(" (2 var fit)\n");
   }
 
   /*if(FIT_B && ANISOU){
@@ -113,37 +118,53 @@ float Fit_fluctuations(double *mass_sum, float *B_TNM,
   double sum_sigma2=0;
   for(i=0; i<NM.N; i++)if(sigma2[i]>0)sum_sigma2+=sigma2[i];
   float kappa=1;
-  if((FIT_B>0)&&(slope_B)){
+  if((FIT_B>0)&&(slope_B>0)){
     kappa=1./slope_B;
-    printf("Force constant: %7.3f x %7.3f = %7.3f    -> K0 = %7.3f  (Bfactor fit)\n",kappa,KAPPA,kappa*KAPPA,K0);
-  }else if(FIT_B==0){
-    kappa=1;
-    printf("Force constant: %7.3f x %7.3f = %7.3f    -> K0 = %7.3f    (Default value)\n",kappa,KAPPA,kappa*KAPPA,K0);
+    printf("Force constant: %.4g x %.4g = %.4g    -> K0 = %.4g"
+	   "  (Bfactor fit)\n", kappa,KAPPA,kappa*KAPPA,kappa*K0);
   }else if(FIT_B<0){
-    kappa= sum_sigma2/(*mass_sum*RMSD_EXP*RMSD_EXP);
-    printf("Force constant: %7.3f x %7.3f = %7.3f     -> K0 = %7.3f   (<RMSD>= %.2f)\n",kappa,KAPPA,kappa*KAPPA,K0,RMSD_EXP);
+    kappa= sum_sigma2/(N_ref*RMSD_EXP*RMSD_EXP); //Ref_kin.mass_sum*
+    printf("Force constant: %.4g x %.4g = %.4g     -> K0 = %.4g"
+	   "   (<RMSD>= %.2f)\n", kappa,KAPPA,kappa*KAPPA,kappa*K0,RMSD_EXP);
+  }else { //(FIT_B==0)||(slope_B<=0)
+    kappa=1;
+    printf("Force constant: %.4g x %.4g = %.4g    -> K0 = %.4g"
+	   "    (Default value)\n", kappa,KAPPA,kappa*KAPPA,K0);
   }
-  *RMSD_NM=sqrt(sum_sigma2/(kappa*(*mass_sum)));
+  *RMSD_NM=sqrt(sum_sigma2/(N_ref*kappa)); //Ref_kin.mass_sum*
   printf("RMSD of normal modes= %.3f (pred)\n", *RMSD_NM);
+  if(FIT_B>0 && Temp>0){
+    *Temp_comp=Temp;
+  }else{
+    //*Temp_comp=TEMP_DEF*kappa*KAPPA/KAPPA_DEF;
+    *Temp_comp=TEMP_DEF;
+  }
 
   if(anharmonic){sprintf(out,   "#B-factors, anharmonic analysis\n");}
   else{sprintf(out,   "#B-factors, harmonic analysis\n");}
 
-  sprintf(out, "%sr(B_pred,B_exp)       %.3f\n", out, r_B);
-  sprintf(out, "%sForce constant factor %.3f\n", out, kappa);
-  sprintf(out, "%sRMSD_crystal          %.3f\n", out, RMSD_crys);
-  sprintf(out, "%sRMSD_Norm.Modes       %.3f\n", out, *RMSD_NM);
-  sprintf(out, "%sInternal_fluct        %.3f\n", out, f_dof[0]);
-  sprintf(out, "%sTranslation_fluct     %.3f\n", out, f_dof[1]);
-  sprintf(out, "%sRotation_fluct        %.3f\n", out, f_dof[2]);
+  char tmp[60];
+  sprintf(tmp, "r(B_pred,B_exp)       %.3f\n", r_B); strcat(out, tmp);
+  sprintf(tmp, "Force constant factor %.3f\n", kappa); strcat(out, tmp);
+  sprintf(tmp, "RMSD_crystal          %.3f (all)\n", RMSD_crys);
+  strcat(out, tmp);
+  sprintf(tmp, "RMSD_crystal          %.3f (internal)\n", RMSD_crys_int);
+  strcat(out, tmp);
+  sprintf(tmp, "RMSD_Norm.Modes       %.3f\n", *RMSD_NM); strcat(out, tmp);
+  /*sprintf(tmp, "Estimated temperature %.1f (kappa= %.3g)\n",
+   *Temp_comp, kappa*KAPPA); strcat(out, tmp);*/
+  sprintf(tmp, "Internal_fluct        %.3f\n", f_dof[0]); strcat(out, tmp);
+  sprintf(tmp, "Translation_fluct     %.3f\n", f_dof[1]); strcat(out, tmp);
+  sprintf(tmp, "Rotation_fluct        %.3f\n", f_dof[2]); strcat(out, tmp);
 
   //  Print B factors
   // Rescale predicted B factors
   for(i=0; i<nres1; i++)B_TNM[i]/=kappa;
   Print_B_fact(B_TNM, B_pred_all, B_exp, Na, atoms1, Bref,
 	      seq1, nameout, "Bfact", r_B, slope_B, f_dof, ridge);
-  if(B_exp)free(B_exp); if(B_pred_all)free(B_pred_all);
-
+  if(B_exp)free(B_exp);
+  if(B_pred_all)free(B_pred_all);
+  printf("FIT_B= %d kappa= %.3g\n", FIT_B, kappa);
 
   return(kappa);
 }
@@ -239,8 +260,8 @@ float Bfactors_fit(float *r, int *outlier, float *dof,
   dof[1]=fit.A[1]*N/sum;  // Translations
   dof[2]=1-dof[0]-dof[1]; // Rotations*/
   free(fit.A);
-  for(i=0; i<N; i++)free(Xall[i]); free(Xall);
-  for(i=0; i<num; i++)free(X[i]); free(X);
+  for(i=0; i<N; i++){free(Xall[i]);} free(Xall);
+  for(i=0; i<num; i++){free(X[i]);} free(X);
   return(slope);
 }
 
@@ -340,4 +361,19 @@ int Filter_modes_outliers(struct Normal_Mode NM, struct Reference Ref_kin,
     if(discard==0)break;
   }
   return(discard_tot);
+}
+
+float Compute_correlation(float **Cart_mode, float *sigma2,
+			  int N_modes, int i1, int i2)
+{
+  int ia, k1=3*i1, k2=3*i2;
+  double corr=0;
+  for(ia=0; ia< N_modes; ia++){
+    if(sigma2[ia]==0)continue;
+    float *x1=Cart_mode[ia]+k1;
+    float *x2=Cart_mode[ia]+k2;
+    double xx=x1[0]*x2[0]+x1[1]*x2[1]+x1[2]*x2[2];
+    corr += xx*sigma2[ia];
+  }
+  return(corr);
 }

@@ -54,7 +54,7 @@ void Compute_interactions(int *N_int, struct interaction **Int_list,
 			  char *INT_TYPE, atom *atoms, int natoms,
 			  int nres, char *nameout)
 {
-  INT_MAX=100*natoms;
+  INT_MAX=100*nres;
   struct interaction *Int_tmp=malloc(INT_MAX*sizeof(struct interaction));
   if(Int_tmp==NULL){
     printf("ERROR, no memory available for storing %d interactions\n",
@@ -359,7 +359,8 @@ int Interactions_min_M(struct interaction *Int_list, float thr,
 
   for(res1=0; res1<N_res; res1++){
 
-    while(atoms[i1_start].res< res1)i1_start++; i2_start=i1_start+1;
+    while(atoms[i1_start].res< res1)i1_start++;
+    i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
       while(atoms[i2_start].res< res2)i2_start++;
@@ -446,7 +447,8 @@ int Interactions_all(struct interaction *Int_list, float thr,
 
   for(res1=0; res1<N_res; res1++){
 
-    while(atoms[i1_start].res< res1)i1_start++; i2_start=i1_start+1;
+    while(atoms[i1_start].res< res1)i1_start++;
+    i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
       while(atoms[i2_start].res< res2)i2_start++;
@@ -501,7 +503,8 @@ int Interactions_all_ref(struct interaction *Int_list, float thr,
 
   for(res1=0; res1<N_res; res1++){
 
-    while(atoms[i1_start].res< res1)i1_start++; CB1=i1_start;
+    while(atoms[i1_start].res< res1)i1_start++;
+    CB1=i1_start;
     if(Find_atom(atoms, &CB1, res1, N_atoms, REF)<0){
       if(notfound[res1]==0)
 	printf("WARNING, %s atom not found, res= %d\n", REF, res1);
@@ -510,7 +513,8 @@ int Interactions_all_ref(struct interaction *Int_list, float thr,
     i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
-      while(atoms[i2_start].res< res2)i2_start++;  CB2=i2_start;
+      while(atoms[i2_start].res< res2)i2_start++;
+      CB2=i2_start;
       if(Find_atom(atoms, &CB2, res2, N_atoms, REF)<0){
 	if(notfound[res2]==0)
 	  printf("WARNING, %s atom not found, res= %d\n", REF, res2);
@@ -574,7 +578,8 @@ int Interactions_HB(struct interaction *Int_list, float thr,
 
   for(res1=0; res1<N_res; res1++){
 
-    while(atoms[i1_start].res< res1)i1_start++; i2_start=i1_start+1;
+    while(atoms[i1_start].res< res1)i1_start++;
+    i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
       while(atoms[i2_start].res< res2)i2_start++;

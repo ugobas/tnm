@@ -5,7 +5,8 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 		       float *Confchange,
 		       //int mode,
 		       char *pdb, char *chain,
-		       int Nres, char *SITES, int anharmonic);
+		       int Nres, char *SITES, int anharmonic,
+		       struct interaction *Int_list_inter, int N_int_inter);
 void Get_interaction_list(int **clist, int **cnum, int *nc,
 			  atom *atoms, int *atomres, int Na,
 			  struct interaction *Int_list, int N_int, int NCMAX);

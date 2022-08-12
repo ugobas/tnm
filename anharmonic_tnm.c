@@ -35,7 +35,7 @@ double E_COV_FACT=2; // Factor between bonded and not bonded energy
 double Ene_cov_ini;
 struct interaction *Int_list_cov; int N_cov;
 
-int INT_MAX;        // Maximum number of interactions tested
+static int INT_MAX;        // Maximum number of interactions tested
 float d_CA_high=22; // Maximum distance in stored interactions
 float MAX_ANGLE=0.05; // Maximum allowed angular deviation
 float RMSD_STEP=1.0;  // Interaction list computed when RMSD > RMSD_STEP
@@ -422,7 +422,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 
     // Next step
     if(turn ||(c2_all > c2_max)){ //||(E>E_thr)
-      if(c_all<0)break; turn=0;
+      if(c_all<0)break;
+      turn=0;
       // c>0, change direction
       c_all=0; c0=0; for(i=0; i<n3; i++)coord_ref[i]=coord_ini[i];
       c_step=-c_step; c_step_fit=-c_step_fit; i_step=0;

@@ -1,5 +1,8 @@
+#ifndef __INI_READ
+#define __INI_READ
+
 int Read_coord(char *pdb_name, int *nmr, struct residue *seq, atom *atoms,
-	       char *chain_to_read, int *ANISOU);
+	       char *chain_to_read, int *ANISOU, float *TEMP);
 int Count_residues(char *pdb_name, char *chain_to_read);
 int Get_amm(char *amm, int *exo, char *res_type_old, int hetatm, int n_exo);
 void Delete_tmp_file();
@@ -13,5 +16,6 @@ int Read_seqres(char **seqres, int *N_seqres, int NCHAIN,
 		char *file_pdb, char *chain_to_read);
 void Find_PDB_order(atom *atoms, int N_atoms);
 
-int L_MAX;
+extern int L_MAX;
 
+#endif

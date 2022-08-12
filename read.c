@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "read.h"
 #include "nma_para.h"
+#include "externals.h"
 
 int SC_BEFORE=1; // Put side chain before CO
 char CHAIN_CODE[200];
@@ -96,20 +97,21 @@ void Read_PDB(int *nres,   // Number of amino acid residues
 	      atom **ligatoms, // Pointer to ligand atoms
 	      struct chain **chains, // Pointer to protein chains
 	      int *Nchain, // Number of protein chains (1-Nchain)
+	      float *TEMP, // Temperature of the experiment, if given
 	      char *pdbid, // PDB identifier
 	      char *file_pdb) // INPUT: Path to PDB file
 {
   strcpy(CHAIN_CODE,"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz:=-_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz:=-_");
 
   /****************** Reading atoms: ************************/
-  int i;
+  int i; 
   int numres=Count_residues(file_pdb, chain); L_MAX=numres;
   int numatoms=ATOM_MAX*numres;
   atom *atom_read=malloc(numatoms*sizeof(atom));
   *seq=malloc(numres*sizeof(struct residue)); 
   //for(i=0;i<numres;i++){(*seq)[i].chain='-';}
   
-  *nres=Read_coord(file_pdb, nmr, *seq, atom_read, chain, ANISOU);
+  *nres=Read_coord(file_pdb, nmr, *seq, atom_read, chain, ANISOU, TEMP);
   if(*nres<=0){
     printf("WARNING, file %s, no residue found\n", file_pdb); return;
   }
@@ -125,17 +127,15 @@ void Read_PDB(int *nres,   // Number of amino acid residues
   *atoms=malloc((*natoms+*na_lig)*sizeof(atom));
   printf("PDB %s chain %s nres=%d natoms=%d\n",pdbid, chain, *nres, *natoms);
 
-
-
   /**************** Set chains *********************/
   // Eliminate chains with fewer than MIN_ATOM atoms and their residues
   // Allocate and store chains
   // Allocate and store atoms
   *Nchain=Set_chains(chains, atoms, natoms, *seq, nres);
   printf("%d chains found: ", *Nchain);
-  for(i=0; i<*Nchain; i++)printf("%c", (*chains)[i].label); printf(".\n");
+  for(i=0; i<*Nchain; i++)printf("%c", (*chains)[i].label);
+  printf(".\n");
   free(atom_read); //modyves: this was never freed
-
 
   int N_seqres[*Nchain];
   char *seqres[*Nchain], chainlabel[*Nchain+1];
@@ -272,7 +272,8 @@ int Count_residues(char *pdb_name, char *chain_to_read){
       if(rchain[i]){xchain[nc]=chain_to_read[i]; nc++;}//modyves
       else{printf("WARNING, chain %c not found\n", chain_to_read[i]);}
     }
-    for(i=0; i<nc; i++)chain_to_read[i]=xchain[i]; nchains=nc;//modyves
+    for(i=0; i<nc; i++)chain_to_read[i]=xchain[i];
+    nchains=nc;//modyves
   }
   chain_to_read[nchains]='\0';
   printf("Counting %3d residues in %d chains: %s\n",N_res, nchains, chain_to_read);
@@ -286,7 +287,7 @@ int Count_residues(char *pdb_name, char *chain_to_read){
 /////////////////////////////////////////////////////////////////////////
 int Read_coord(char *pdb_name, int *nmr,
 	       struct residue *seq, atom *atoms,
-	       char *chain_to_read, int *ANISOU)
+	       char *chain_to_read, int *ANISOU, float *TEMP)
 {
   /* Open file */
   int Compression;
@@ -335,6 +336,15 @@ int Read_coord(char *pdb_name, int *nmr,
       if(ini_chain==0)continue;
       hetatm=1;
       /* Cofactor or exotic residue */
+      }else if(TEMP && strncmp(string,"REMARK 200", 10)==0){
+      char word1[40], word2[40], word3[40], word4[40];
+      sscanf(string+12, "%s%s%s%s", word1, word2, word3, word4);
+      if((strncmp(word1,"TEMPERATURE", 11)==0)&&
+	 (strncmp(word4,"NULL", 4)!=0)){
+	sscanf(word4, "%f", TEMP);
+	if(strncmp(word2,"(KELVIN)", 8)!=0){*TEMP+=273;}
+	}
+      continue;
     }else if(strncmp(string,"EXPDTA", 6)==0){
       char word1[80], word2[80];
       sscanf(string+8, "%s%s", word1, word2);
@@ -358,7 +368,8 @@ int Read_coord(char *pdb_name, int *nmr,
       for(j=0; j<n_exo; j++){
 	if(strncmp(res_exo[j],res_exo[n_exo],3)==0)break;
       }
-      if(j==n_exo)n_exo++; continue;
+      if(j==n_exo)n_exo++;
+      continue;
     }else if(strncmp(string,"ENDMDL", 6)==0){
       break;                                    /* end model */
     }else if(strncmp(string,"ANISOU", 6)==0){
@@ -583,7 +594,8 @@ int Read_ligand(char *pdb_name, int *nmr, struct residue *seq, atom *atoms,
       /* Cofactor or exotic residue */
 
     }else if(strncmp(string,"EXPDTA", 6)==0){
-      if(strncmp(string+10, "NMR", 3)==0)*nmr=1; continue;
+      if(strncmp(string+10, "NMR", 3)==0)*nmr=1;
+      continue;
       /* NMR structure */
 
     }else if((strncmp(string,"TER",3)==0)&&(N_res>0)){
@@ -601,7 +613,8 @@ int Read_ligand(char *pdb_name, int *nmr, struct residue *seq, atom *atoms,
       for(j=0; j<n_exo; j++){
 	if(strncmp(res_exo[j],res_exo[n_exo],3)==0)break;
       }
-      if(j==n_exo)n_exo++; continue;
+      if(j==n_exo)n_exo++;
+      continue;
 
     }else if(strncmp(string,"ENDMDL", 6)==0){
       break;                                    /* end model */
@@ -664,7 +677,8 @@ int Read_ligand(char *pdb_name, int *nmr, struct residue *seq, atom *atoms,
 
     altloc=string[16];
     if(altloc!=' '){
-      if(altloc_sel==' ')altloc_sel=altloc; if(altloc!=altloc_sel)continue;
+      if(altloc_sel==' ')altloc_sel=altloc;
+      if(altloc!=altloc_sel)continue;
     }
 
     if((icode!=icode_old)&&(res_num==res_num_old)){
@@ -749,22 +763,24 @@ static short Write_residue(char *res_type_old, atom *first_atom, short i_atom,
   ptr_tmp->type=type;
   ptr_tmp->chain=xchain;
 
-  strcpy(ptr_tmp->pdbres,"     "); //modyves: this was sometimes used uninitialized
+  strcpy(ptr_tmp->pdbres,"     "); //modyves: this was sometimes uninitialized
   sprintf(ptr_tmp->pdbres, "%d", res_num);
-  if(icode!=' ')sprintf(ptr_tmp->pdbres, "%s%c", ptr_tmp->pdbres, icode);
+  char tmp[40];
+  if(icode!=' '){sprintf(tmp, "%c", icode); strcat(ptr_tmp->pdbres, tmp);}
   ptr_tmp->amm=amm[1]; ptr_tmp->exo=exo;
-  if((type==1)||(type==-1))
- 	{ptr_tmp->i_aa=Code_AA(amm[1]);
-     if(ptr_tmp->i_aa<0)
-     	{printf("Unknown residue %s %d%c\n", res_type_old, res_num, icode);
-      	 ptr_tmp->i_aa=0;
-    	}
-  	}
+  if((type==1)||(type==-1)){
+    ptr_tmp->i_aa=Code_AA(amm[1]);
+    if(ptr_tmp->i_aa<0){
+      printf("Unknown residue %s %d%c\n", res_type_old, res_num, icode);
+      ptr_tmp->i_aa=0;
+    }
+  }
   ptr_tmp->atom_ptr=first_atom; 
   ptr_tmp->n_atom=i_atom;
 
   if(type==0)
-    printf("Group %s %d%c  %s (%d atoms) not a residue\n",res_type_old, res_num, icode, amm, i_atom);
+    printf("Group %s %d%c  %s (%d atoms) not a residue\n",
+	   res_type_old, res_num, icode, amm, i_atom);
 
   return(type);
 }
@@ -779,16 +795,16 @@ int Get_amm(char *amm, int *exo, char *res_type_old, int hetatm, int n_exo)
  find_type:
   if(amm[0] == ' '){
     // Standard amino acid residue
-    if(hetatm){type=-1;} // Standard res. and HETATM => ligand
-    else{type=1;}
+    if(hetatm==0 || exo_check){type=1;}
+    else{type=-1;} // Standard res. and HETATM => ligand
   }else if(amm[0]=='D'){
     // deoxyribo-nucleotide
-    if(hetatm){type=-2;} // Standard nuc and HETATM => ligand
-    else{type=2;}
+    if(hetatm==0 || exo_check){type=2;}
+    else{type=-2;} // Standard nuc and HETATM => ligand
   }else if(amm[0]=='R'){
     // ribo-nucleotide
-    if(hetatm){type=-3;} // Standard nuc and HETATM => ligand
-    else{type=3;}
+    if(hetatm==0 || exo_check){type=3;}
+    else{type=-3;} // Standard nuc and HETATM => ligand
   }else if(exo_check==0){
     exo_check=1;
     // Non-standard residue
@@ -807,6 +823,7 @@ int Get_amm(char *amm, int *exo, char *res_type_old, int hetatm, int n_exo)
       }
     }
   }
+  //if(type<0)type=-type;
   return(type);
 }
 
@@ -1177,7 +1194,8 @@ int Order_atoms_aa(atom *res_atom, int n_atom)
   
   // Store side chain before C-O
   int N_side=n_atom;
-  if(i_C>=0)N_side--; if(i_O>=0)N_side--; 
+  if(i_C>=0)N_side--;
+  if(i_O>=0)N_side--; 
   if(N_atom_res==N_side)goto CO;
   N_atom_res+=Store_branch(&atom2, 'B', res_atom, n_atom);
   if(N_atom_res==N_side)goto CO;

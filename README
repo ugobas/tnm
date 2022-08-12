@@ -10,6 +10,7 @@ The program tnm computes the normal modes of protein structure <pdb1> in the spa
 
 The analysis performed includes:
 
+* For a single conformation <pdb1>:
 - Print normal modes as movies in PDB files (if specified by the user) and as vectors of Cartesian and torsional displacements.
 - Predict residue-specific flexibility (B factors)
 - Simulate ensembles of structures with predefined amplitudes and anharmonic energy below a threshold
@@ -17,9 +18,12 @@ The analysis performed includes:
 - Predict dynamical couplings for all residues, such as for predicting the fluctuations of inter-residue distances
 - Predict dynamical couplings between and among residues in binding sites specified in the PDB or specified in an external file
 - Perform anharmonicity analysis for all normal modes
+- Estimate binding free energy between two sets of protein chains in a complex
 
-- For a conformational change (two pdb structures with similar sequence):
-- Correlation between conformational change and predicted dynamics at the level of Cartesian fluctuations, torsional fluctuations and projections on normal modes, and deviation from the null model of linear response that suggests if the conformation change is functional.
+* Additionally, for a conformational change
+(two pdb structures <pdb1> <pdb2> with similar sequence):
+- Correlation between conformational change and predicted dynamics at the level of Cartesian fluctuations, torsional fluctuations and projections on normal modes.
+- Deviation from the null model of linear response, expressed in terms of the ratio between the harmonic energy barrier of the observed conformation change (DE) and of 200 random conformational changes (DE_ran). DE significantly lower than DE_ran suggests that the conformation change is functional.
 - If the two sequences are related by the specified number of mutations, it estimates the mutational parameters that produces the observed conformational change and predicts the conformational change produced with the input mutational parameters.
 
 Custom settings: Analysis (see also the sample input file Input_TNM.in at the end of this file for examples of the output parameters)
@@ -29,13 +33,15 @@ Custom settings: Analysis (see also the sample input file Input_TNM.in at the en
 If LABEL=1 the program prints the model param. in the names of output files.
 The program prints a self-explanatory summary of the results in the <>_summary.dat file.
 
-The force constant of the model is fitted from the B-factors, if present, modelling B-factors from the contribution of rigid-body degrees of freedom (9 fitted parameters) plus internal fluctuations (1 additional parameter, inversely proportional to the force constant) and regularizing the fit through our method of rescaled ridge regression (Dehouck and Bastolla Integr Biol 2017 https://pubmed.ncbi.nlm.nih.gov/28555214/).
+If FIT_B=1, the force constant of the model is fitted from the B-factors, if present, modelling B-factors as the contribution of rigid-body degrees of freedom (9 fitted parameters) plus internal fluctuations (1 additional parameter, inversely proportional to the force constant) and regularizing the fit through our method of rescaled ridge regression (Dehouck and Bastolla Integr Biol 2017 https://pubmed.ncbi.nlm.nih.gov/28555214/).
 
 Predicted mean square fluctuations of all residues are printed in the <>_MSF.dat file together with observed and predicted B factors.
+
 Mean square fluctuations of torsion angles are printed in the <>_MSF_tors.dat file.
+
 If requested, the contact matrix is printed in the .cm file.
 
-If requested, anharmonic analysis is performed for all modes, moving the conformation along the normal mode, computing its anharmonic energy, and computing the Boltzmann average of the normal mode coordinate using the anharmonic energy as Boltzmann weight and the Kullback-Leibler divergence between the harmonic and anharmonic weights. The summary analysis and the analysis of conformational changes is performed both with the harmonic and with the anharmonic ensemble. These computations are slow and they do not improve the results, so ANHARMONIC=0 is reccomended
+If ANHARMONIC=1, anharmonic analysis is performed for all modes, moving the conformation along the normal mode, computing its anharmonic energy, and computing the Boltzmann average of the normal mode coordinate using the anharmonic energy as Boltzmann weight and the Kullback-Leibler divergence between the harmonic and anharmonic weights. The summary analysis and the analysis of conformational changes is performed both with the harmonic and with the anharmonic ensemble. These computations are slow and they do not improve the results, so ANHARMONIC=0 is reccomended
 
 ......................................................
 3B) NORMAL MODES
@@ -59,7 +65,7 @@ If PRINT_CHANGE=1 is specified the program prints a pdb file with the path of th
 
 Given the Cartesian conformational change for all reference atoms, the program computes the torsional conformational change based on 4 methods: (1) Difference of torsion angles without considering bond angles; (2) Ordinary least square fit; (3) Rescaled ridge regression of type M (maximum penalty); (4) Rescaled ridge regression of type Cv (specific heat). By far the best results are obtained with rescaled ridge regression, while results obtained with (1) and (2) often do not make sense but they are reported for completeness.
 
-The Summary file reports the correlation of the projections of the torsional conformation changes on the torsional normal modes, c_alpha, with the normal mode frequencies omega_alpha, r[c^2,1/w^2], and the excess correlations with respect to the null-model expectation based on linear response theory, r[(c*w)^2,1/w^2], with the corresponding significance, Significance(Z), which can be interpreted as evidence that the conformational change is target of natural selection. The number of normal modes that effectively contribute to the conformational change are reported as Recp.Coll(cc) and the mode that contributes most is reported as Most_contr.mode(cc).
+The Summary (<>.summary.dat) file reports the correlation of the projections of the torsional conformation changes on the torsional normal modes, c_alpha, with the normal mode frequencies omega_alpha, r[c^2,1/w^2], and the excess correlations with respect to the null-model expectation based on linear response theory, r[(c*w)^2,1/w^2], with the corresponding significance, Significance(Z), which can be interpreted as evidence that the conformational change is target of natural selection. The number of normal modes that effectively contribute to the conformational change are reported as Recp.Coll(cc) and the mode that contributes most is reported as Most_contr.mode(cc).
 If PRINT_FORCE=1 is specified the program prints as a PDB file the force that is required to generate the torsional conformation change computed with method (4).
 
 ................................................
@@ -71,7 +77,13 @@ The file <>_mut_prof_RMSD.dat contains the profile of the resulting structural d
 
 The program TNM models mutations as perturbations present at all contacts formed by the mutated residue. The perturbation is a combination of the change of residue size, the change of contact stability and the change of the optimal distance of the contact. The three coefficients of this combination are given in the inpiut file MUT_PARA=<file> while the 210 possible changes are parameterized internally. The command MUT_PARA=<file> allows to change the mutation parameters in <file> (default Mutation_para.in, provided with the package).
 
-If an input conformational change is the result of a mutation in the primary sequence, the program predicts the structural effect of the mutation (only if the number of mutated amino acids equals to NMUT set by NMUT=<value>, unless NMUT=-1, in which case the prediction is performed in any case). The effect of the mutation can be predicted through the parameters set in MUT_PARA, or the program can internally compute the optimal coefficients that maximize the cosine between the observed and predicted conformational change.
+If an input conformational change is the result of a mutation in the primary sequence, the program predicts the structural effect of the mutation (only if the number of mutated amino acids equals to NMUT set by NMUT=<value>, unless NMUT=-1, in which case the prediction is performed in any case). The effect of the mutation can be predicted through the parameters set in MUT_PARA, or the program can internally compute the optimal coefficients that maximize the correlation between the observed and predicted conformational change squared at each position i, according to the model:
+
+RMSD_all^2(i)=A_mut*RMSD_mut^2(i)+A_nomut*RMSD_nomut^2(i)+offset
+
+The parameters A_mut and A_nomut are used to rescale the force constant KAPPA and the three mutation parameters C_SIZE, C_STAB and C_DIST such that the average profiles (Mean Square Deviations) are equal,
+RMSD_all^2=A_mut*RMSD_mut^2+A_nomut*RMSD_nomut^2+offset
+The results of this analysis are output in the <>_pred_mut.dat file.
 
 .........................................................
 3F) DYNAMICAL COUPLINGS
@@ -82,6 +94,41 @@ For each coupling, the program can print the corresponding *profile* (one value 
 
 It is possible to specify a list of *functional sites* in the file specified by SITES=<file>. If no file is specified, the binding sites reported in teh PDB file are used, if present. For each binding site, the average couplings between the residues that belong to the site are reported, as well as their P-value (fraction of 1000 randomly generated sites with coupling larger than the functional site), in the file <>_binding_sites.dat, and the average couplings between residues of two different sites and the corresponding P-values are reported in the file <>_pairs_sites.dat
 
+3G) ANALYSIS OF BINDING
+It is possible to specify in the configuration file some chains that are interpreted as the ligand of the other chain by setting:
+BINDING= C
+If the complex consists of the chains ABC, the program will estimate the binding free energy between chains AB and chain C. 
+
+It is recommended to perform the binding analysis with fixed force constant, specifying FIT_B=0 in the input file.
+The relevant output in the <>.summary.dat file is:
+kT/h=                81.84          
+Entropy per res       5.311 (holo)
+Free energy per res   -4.302 (holo)
+Interface contacts:   36
+Entropy per res       5.327 (apo, interface)
+Free energy per res   -4.332 (apo, intern)
+Free energy rigid     -4.224 (apo, /nrigid)
+Binding free energy NM  37.06 (internal)
+Binding free energy NM  1.146 (rigid body)
+Binding free energy cont -0.9318
+SASA difference          7.984
+
+The quantities above are in internal tnm units (energy: kT=1; length: 1A; time: 1s) The program first estimates the quantum frequency kT/h and computes the free energy and entropy with the Bose-Einstein statistics. The vibrational entropy and free energy of the protein molecule is first computed for the complex (holo), then the free energy and entropy are computed again separately for internal and rigid body degrees of freedom both for the complex and for the apo structure obtained eliminating interface contacts. The difference between the vibrational free energy that considers and ignores the interface contacts is called "Binding free energy NM".
+Binding free energy cont represents the contact free energy of the interface contacts between the two sets of chains
+SASA difference is the estimated difference in solvent accessible surface area (in arbitrary units) estimated from the interresidue contacts, first considering and then ignoring the interface contacts, and subtracting the first from the second one.
+
+The program computes and print in the <>_interface.dat file the dynamical couplings (Coordination and Directionality, see above) between residues that are in contact in the interface and between residues belonging to different chains.
+
+3H) FORCE CONSTANT
+If FIT_B=1, the force constant at 3.5A KAPPA is printed in the output file (at higher  distances the force constant decreases as kappa(r)=KAPPA*(3.5/r)^-E)
+If the temperature of the X-ray experiment is given in the PDB file, it is written in the record temperature:
+
+Force constant at 3.5A 4.92
+Temperature:          100 K
+
+We expect that, for FIT_B=1, the force constant is approximately inversely proportional to T. However, this relation is not verified in real data but there is a large variation of KAPPA for experiments obtained at the same temperature (typically, 100K is rather frequent).
+
+ 
 Custom settings: MODEL
 ----------------------------------------------
 The following settings can be modified by the user by editing the configuration file. The best results are obtained with the default settings.

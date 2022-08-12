@@ -18,6 +18,9 @@
 
 #include <time.h>
 
+double SCALE_COORD=2; // Coordination_ij=exp(-SCALE_COORD*<(dij-<dij>)^2)
+double SCALE_D=2;      // Proximity_ij=exp(-d_ij/SCALE_D);
+
 int PRINT_RAN=0; // Print results for random sites?
 int PRINT_DIFF=1;  // Print difference in Conformation per residue?
 int PRINT_SITE=1;  // Print active site read in the PDB?
@@ -40,6 +43,12 @@ void Normalize_profile(double *v, int N);
 int Print_links(float **Coupling, int N, char *nameout, char *ext, int sign);
 void Print_names(int N, char **pdbres, char *amm, char *chain, char *nameout);
 
+extern char DOF_LABEL[];
+extern double G_NM_holo;
+extern double DG_NM;
+extern double DG_NM_internal;
+extern double DG_NM_rigid;
+extern double E_cont_bind;
 
 // Binding sites
 void Binding_sites(int *site,
@@ -109,11 +118,20 @@ void Print_sites(int **site_res, int *nres_site,
 int Get_zeta(float **Coupling, int N);
 float **Negexp_distance(float **d02ij, int Na, float D);
 void Ave_St_dev(double *sum1, double *sum2, int n);
-void Coupling_chains(float **Coup_dir, float **Coup_coord,
-		     float **Coup_deformation, float **Coup_dr_dir,
-		     char *ch, int Na, char *chain_label, int Nchain,
-		     char *nameout);
-double **Chain_coup(float **Coupling, int Nchain, char *ch, int Na);
+void Coupling_chains(double **Chain_dir, double **Chain_coord,
+		     double **Chain_def, double **Chain_cov,
+		     double **norm_chain, char *ch, int Na,
+		     char *chain_label, int Nchain, char *nameout1);
+double **Chain_coup(float **Coupling, double **norm_chain, float **Proximity,
+		    int Nchain, char *ch, int Na);
+void Print_interface_coupling(struct interaction *Int_list_inter,
+			      int N_int_inter,
+			      struct interaction *Int_list, int N_int,
+			      atom *atoms, int Nchain, char *nameout,
+			      float **Coup_dir, float**Coup_coord,
+			      float **Coup_deformation,
+			      double **Chain_dir, double **Chain_coord,
+			      double **Chain_def, double **norm_chain, int Na);
 
 /****************************************************************
 
@@ -127,7 +145,8 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 		       struct residue *seq, char *nameout1, //int mode,
 		       float *Confchange,
 		       char *pdb, char *chain,
-		       int Nres, char *SITES, int anharmonic)
+		       int Nres, char *SITES, int anharmonic,
+		       struct interaction *Int_list_inter, int N_int_inter)
 {
   // Predicted fluctuations
   float *sigma2; char nameout[200];
@@ -136,7 +155,6 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   }else{
     sigma2=NM.sigma2_anhar; sprintf(nameout, "%s.anharmonic", nameout1);
   }
-
 
   // Extract c_alpha
   char SEL[4]="CA"; if(strcmp(REF, "CB")==0)strcpy(SEL, "CB");
@@ -185,7 +203,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   int i, j, ia, ja, a, n;
   double dr2[Na], norm_w=0;
   for(ia=0; ia<Na; ia++)dr2[ia]=0;
-  for(a=0; a<NM.N_relevant; a++){
+  for(a=0; a<NM.N; a++){
     // For each normal mode
     if((NM.select[a]==0)||(sigma2[a]==0))
       continue;
@@ -242,7 +260,8 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 
 
   // Empty 1
-  for(i=0; i<Na; i++)Empty_matrix_f(r0ijk[i], Na); free(r0ijk);
+  for(i=0; i<Na; i++)Empty_matrix_f(r0ijk[i], Na);
+  free(r0ijk);
   Empty_matrix_i(clist, Na);
   Empty_matrix_i(cnum, Na);
   Empty_matrix_f(dr, Na);
@@ -297,7 +316,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 	int j3=3*iref[ja];
 	double **F_matrix=Allocate_mat2_d(3, 3);
 	double **Receiver_matrix=Allocate_mat2_d(3, 3);
-	for(a=0; a<NM.N_relevant; a++){
+	for(a=0; a<NM.N; a++){
 	  if((NM.select[a]==0)||(sigma2[a]<=0))continue;
 	  float w=sigma2[a]; //w*=w;
 	  float *Mode_i=NM.Cart[a]+i3;
@@ -333,7 +352,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
     }
   }
 
-  /*************************************************************
+  /************************************************************
                    Print couplings and profiles
   *************************************************************/
 
@@ -360,7 +379,8 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   ////////////////////////////////////////////////////////////
   // COORDINATION 
   if(PRINT_SIGMA_DIJ){
-    Print_links(Coup_coord, Na, nameout,".DVAR.dat", 0); // YYY change output file name
+    Print_links(Coup_coord, Na, nameout,".DVAR.dat", 0);
+    // YYY change output file name
   }
 		
   // Transform coordination into similarity
@@ -374,12 +394,13 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
     }
     }*/
   if(Coup_coord){ // similarity
-    double rii=1, scale=0.5;
+    double rii=1, scale=SCALE_COORD; //1./0.1;
     for(ia=0; ia<Na; ia++){
       Coup_coord[ia][ia]=rii;
       for(ja=0; ja<ia; ja++){
 	double rij2=dr2[ia]+dr2[ja]-2*Coup_dr_dir[ia][ja];
-	Coup_coord[ia][ja]=rii-scale*sqrt(rij2);
+	//Coup_coord[ia][ja]=rii-scale*sqrt(rij2);
+	Coup_coord[ia][ja]=exp(-scale*sqrt(rij2));
 	// (1-sqrt(<|ri-rj|^2>))*scale
 	//d02ij[ia][ja];
 	Coup_coord[ja][ia]=Coup_coord[ia][ja];
@@ -393,7 +414,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   float *Prof_coord=NULL;
   if(PRINT_COORD_COUPLING){
     Print_links(Coup_coord, Na, nameout,
-		"_coordination_coupling.dat", 1); //_zeta
+		".coordination_coupling.dat", 1); //_zeta
     Prof_coord=Make_profile(Coup_coord, Na, PROF_TYPE, "Coord");
   }
 
@@ -401,7 +422,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   //   Deformation
   float *Prof_deformation=NULL;
   if(PRINT_DEF_COUPLING){
-    Print_links(Coup_deformation,Na,nameout,"_deformation_coupling.dat",1);
+    Print_links(Coup_deformation,Na,nameout,".deformation_coupling.dat",1);
     Prof_deformation=
       Make_profile(Coup_deformation, Na, PROF_TYPE, "Deformation");
   }
@@ -410,7 +431,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   //float *Prof_cov=NULL;
   if(PRINT_COV_COUPLING){
     Print_links(Coup_dr_dir, Na, nameout,
-		"_covariance_coupling.dat", 1); //_zeta
+		".covariance_coupling.dat", 1); //_zeta
     //Prof_dir=Make_profile(Coup_dr_dir, Na, PROF_TYPE, "Covariance");
   }else if(Coup_dr_dir){
     Empty_matrix_f(Coup_dr_dir, Na);
@@ -423,7 +444,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   float *Prof_dir=NULL;
   if(PRINT_DIR_COUPLING){
     Print_links(Coup_dir, Na, nameout,
-		"_directionality_coupling.dat", 1); //_zeta
+		".directionality_coupling.dat", 1); //_zeta
     Prof_dir=Make_profile(Coup_dir, Na, PROF_TYPE, "Directionality");
   }
 
@@ -431,13 +452,14 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
   //    Proximity
   float **Coup_proximity=NULL, *Prof_proximity=NULL;
   if(PRINT_COORD_COUPLING){
-    float D=4; // Scale for distances
+    float D=SCALE_D; // Scale for distances
     Coup_proximity=Negexp_distance(d02ij, Na, D);
     Print_links(Coup_proximity, Na, nameout,
-		"_proximity_coupling.dat", 1); //_zeta
+		".proximity_coupling.dat", 1); //_zeta
     Prof_proximity=Make_profile(Coup_proximity, Na, PROF_TYPE, "proximity");
   }
-  for(i=0; i<Na; i++)free(d02ij[i]); free(d02ij);
+  for(i=0; i<Na; i++)free(d02ij[i]);
+  free(d02ij);
 
   // Other profiles
   float *Prof_dr=NULL;
@@ -476,7 +498,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
     for(ia=0; ia<Na; ia++){
       double **Def=Allocate_mat2_d(3,3);
       int i3=3*iref[ia], i, j;
-      for(a=0; a<NM.N_relevant; a++){
+      for(a=0; a<NM.N; a++){
 	float w=sigma2[a]; w*=w;
 	float *Mode=NM.Cart[a]+i3;
 	for(i=0; i<3; i++)for(j=0; j<=i; j++)Def[i][j]+=w*Mode[i]*Mode[j];
@@ -543,8 +565,8 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 
   if(Prof_deformation && 0){
     // Correlation between normal mode and allostery
-    float fluctuation[NM.N_relevant], dev[Na];
-    int imax=0, NMODE=15; if(NMODE>NM.N_relevant)NMODE=NM.N_relevant;
+    float fluctuation[NM.N], dev[Na];
+    int imax=0, NMODE=15; if(NMODE>NM.N)NMODE=NM.N;
     float cc[NMODE], cmax=-2;
     for(i=0; i<NMODE; i++){
       if(sigma2[i]<=0)continue;
@@ -558,7 +580,7 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
       if(cc[i]>cmax){cmax=cc[i]; imax=i;}
       fluctuation[i]=sqrt(sum/Na)*sqrt(sigma2[i]);
     }
-    sprintf(nameout2, "%s_allostery_summary.dat", nameout);
+    sprintf(nameout2, "%s.allostery_summary.dat", nameout);
     file_out=fopen(nameout2, "w");
     printf("Writing %s\n", nameout2);
     fprintf(file_out,
@@ -588,14 +610,42 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
 		  Prof_dr_dir, Coup_dr_dir,
 		  atomres, pdbres, amm,
 		  Na, chain, Nchain, seq, Nres, pdb, nameout, SITES);
+
+    /***************************************************************
+                               Interface
+    ***************************************************************/
     
+    double **norm_ch=NULL, **Chain_cov=NULL, **Chain_dir=NULL,
+      **Chain_def=NULL, **Chain_coord=NULL;
     if(Nchain > 1){
-      Coupling_chains(Coup_dir, Coup_coord, Coup_deformation, Coup_dr_dir,
-		      ch, Na, chain_label, Nchain, nameout);
+      norm_ch=Allocate_mat2_d(Nchain, Nchain);
+      //Chain_cov=Chain_coup(Coup_dr_dir, norm, Coup_proximity, Nchain, ch, Na);
+      Chain_dir=Chain_coup(Coup_dir, norm_ch, Coup_proximity,Nchain,ch,Na);
+      Chain_def=Chain_coup(Coup_deformation,norm_ch,Coup_proximity,Nchain,ch,Na);
+      Chain_coord=Chain_coup(Coup_coord, norm_ch,Coup_proximity,Nchain,ch,Na);
+      Coupling_chains(Chain_dir, Chain_coord, Chain_def, Chain_cov,
+		      norm_ch, ch, Na, chain_label, Nchain, nameout);
     }
 
+    if(Int_list_inter){
+      int *nc_inter, **clist_inter, **cnum_inter;
+      Get_contact_list(&nc_inter, &clist_inter, &cnum_inter,
+		       Na, atoms, Int_list_inter, N_int_inter);
+      Print_interface_coupling(Int_list_inter, N_int_inter,
+			       Int_list, N_int, atoms, Nchain, nameout,
+			       Coup_dir, Coup_coord, Coup_deformation,
+			       Chain_dir, Chain_coord, Chain_def,
+			       norm_ch, Na);
+    }
+
+    if(Chain_cov)Empty_matrix_d(Chain_cov, Nchain);
+    if(Chain_dir)Empty_matrix_d(Chain_dir, Nchain);
+    if(Chain_def)Empty_matrix_d(Chain_def, Nchain);
+    if(Chain_coord)Empty_matrix_d(Chain_coord, Nchain);
+    if(norm_ch)Empty_matrix_d(norm_ch, Nchain);
+
     // Print matrix of profiles
-    sprintf(nameout, "%s_profiles.dat", nameout);
+    strcat(nameout, ".profiles.dat");
     file_out=fopen(nameout, "w");
     printf("Writing %s\n", nameout);
     
@@ -607,39 +657,39 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
     fprintf(file_out, "### res AA binding");
     char hd[80]; sprintf(hd, "### 0 0 0");
     if(Prof_proximity){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\tproximity");
+      strcat(hd, " 1"); fprintf(file_out, "\tproximity");
     }
     if(Prof_coord){
-      sprintf(hd, "%s 1", hd);
+      strcat(hd, " 1");
       fprintf(file_out, "\tcoord=exp(-sigma^2(d_ij)/D)");
     }
     if(Prof_dir){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\tdir=<dri*drj/|dri||drj|>/");
+      strcat(hd, " 1"); fprintf(file_out, "\tdir=<dri*drj/|dri||drj|>/");
     }
     if(Prof_deformation){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\tdeformation=dri/dfj");
+      strcat(hd, " 1"); fprintf(file_out, "\tdeformation=dri/dfj");
     }
     if(Prof_deformation_dist){
-      sprintf(hd, "%s 1", hd);
+      strcat(hd, " 1");
       fprintf(file_out, "\tdeformation_dist=dri/dfj(|i-j|)");
     }
     if(Prof_dr_dir){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\t<dri*drj>");
+      strcat(hd, " 1"); fprintf(file_out, "\t<dri*drj>");
     }
     if(Prof_dr){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\t<|dri||drj|>");
+      strcat(hd, " 1"); fprintf(file_out, "\t<|dri||drj|>");
     }
     if(Prof_Bahar){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\t<|ri-rj|^2>Bahar");
+      strcat(hd, " 1"); fprintf(file_out, "\t<|ri-rj|^2>Bahar");
     }
     if(Prof_str){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\t<s_i*s_j>");
+      strcat(hd, " 1"); fprintf(file_out, "\t<s_i*s_j>");
     }
     if(Prof_str_dir){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\t<s_i d_i*s_j d_j>");
+      strcat(hd, " 1"); fprintf(file_out, "\t<s_i d_i*s_j d_j>");
     }
     if(strdiff){
-      sprintf(hd, "%s 1", hd); fprintf(file_out, "\tConfchange");
+      strcat(hd, " 1"); fprintf(file_out, "\tConfchange");
     }
     fprintf(file_out, "\n%s\n", hd);
     
@@ -737,7 +787,8 @@ float Singvalue_main(double **A, int Na, int Nb)
 
 void Normalize_profile(double *v, int N){
   double sum=0; int i;
-  for(i=0; i<N; i++)sum+=v[i]*v[i]; sum=sqrt(sum/N);
+  for(i=0; i<N; i++)sum+=v[i]*v[i];
+  sum=sqrt(sum/N);
   for(i=0; i<N; i++)v[i]/=sum;
 }
 
@@ -802,12 +853,22 @@ int Print_links(float **Coupling, int N, char *nameout1, char *ext, int sign)
     }
   }
   sum1/=norm; sum2=sqrt((sum2-norm*sum1*sum1)/(norm-1));
+  if(sum1==0 || sum2==0 || isnan(sum1)|| isnan(sum2)){
+    printf("ERROR in Print_links, coupling= %s\n", ext);
+    for(i=0; i<N; i++){
+      float *c=Coupling[i];
+      for(j=i+1; j<N; j++){printf("%.3g ",c[j]);} printf("\n");
+    }
+    printf("ERROR in Print_links, coupling= %s\n", ext);
+    printf("Mean= %.3g s.d.= %.3g\n", sum1, sum2); exit(8);
+  }
+
   double thrmax=sum1+SIGMA*sum2, thrmin=sum1-SIGMA*sum2;
   if(thrmax>=max){thrmax=(max+sum1)/2;}
   if(thrmin<=min){thrmin=(min+sum1)/2;}
-  fprintf(file_out, "# mean= %.3g s.d.= %.3g thr=%.2g %.2g\n",
-	  sum1, sum2, thrmin, thrmax);
-  fprintf(file_out, "#Residue names written in %s_names.dat\n", nameout1);
+  fprintf(file_out, "# mean= %.3g s.d.= %.3g thr=%.2g %.2g SIGMA= %.3g\n",
+	  sum1, sum2, thrmin, thrmax, SIGMA);
+  fprintf(file_out, "#Residue names written in %s.names.dat\n", nameout1);
   fprintf(file_out, "#resi resj coupling\n");
   for(i=0; i<N; i++){
     float *c=Coupling[i];
@@ -827,7 +888,7 @@ void Print_names(int N, char **pdbres, char *amm, char *chain,
 		 char *nameout1)
 {
   int i;  char nameout[200];
-  sprintf(nameout, "%s_names.dat", nameout1);
+  sprintf(nameout, "%s.names.dat", nameout1);
   FILE *file_out=fopen(nameout, "w");
   printf("Writing %s\n", nameout);
   for(i=0; i<N; i++){
@@ -858,7 +919,7 @@ int Get_zeta(float **Coupling, int N)
       c1[l]=sum1/num;
       c2[l]=sqrt((sum2-sum1*sum1/num)/(num-1));
     }else{
-      if(ll<0)ll=l; sum1_l+=sum1; sum2_l+=sum2; num_l+=num;
+      if(ll<0){ll=l;} sum1_l+=sum1; sum2_l+=sum2; num_l+=num;
     }
   }
   sum1_l/=num_l;
@@ -1063,7 +1124,8 @@ void Random_sites(int *site_ran, int nres, int *site_res,
     int shift; i=0;
     while(i<RMAX){
       shift=RandomFloating()*(shiftmax-shiftmin)+shiftmin;
-      if((shift>THR)||(shift<-THR))break; i++;
+      if((shift>THR)||(shift<-THR))break;
+      i++;
     }
     if(i==RMAX){
       printf("WARNING, no allowed random site found in %d attempts\n",
@@ -1109,14 +1171,15 @@ float *Make_profile(float **Mat, int N, char PROF_TYPE, char *what)
   float *prof=malloc(N*sizeof(float)); int i;
   float weight[N], sum_weight=0;
   if(PROF_TYPE=='A'){
-    for(i=0; i<N; i++)weight[i]=1; sum_weight=N;
+    sum_weight=N; for(i=0; i<N; i++)weight[i]=1;
   }else{
     double **Mat2=Get_matrix_positive(Mat, N);
     if(PROF_TYPE=='P'){
       PE_profile(weight, Mat2, N);
     }else if(PROF_TYPE=='C'){
       float *c=EC_profile(NULL, Mat2, N, what);
-      for(i=0; i<N; i++)weight[i]=c[i]; free(c);
+      for(i=0; i<N; i++)weight[i]=c[i];
+      free(c);
     }
     for(i=0; i<N; i++)sum_weight+=weight[i];
     Empty_matrix_d(Mat2, N);
@@ -1230,7 +1293,7 @@ void Deformation_propagation(float **Deformation_coupling, int Na,
 			    char *nameout)
 {
   char namefile[200];
-  sprintf(namefile, "%s_perturbation_propagation.dat", nameout);
+  sprintf(namefile, "%s.perturbation_propagation.dat", nameout);
   FILE *file_out=fopen(namefile, "w");
   printf("Writing %s\n", namefile);
   fprintf(file_out, "# Predicted deformation produced on sites j by a ");
@@ -1397,7 +1460,7 @@ void Binding_sites(int *site,
     site_res_ran[j]=malloc(Nres*sizeof(int *));
 
   char nameout[200];
-  sprintf(nameout, "%s_binding_sites.dat", nameout1);
+  sprintf(nameout, "%s.binding_sites.dat", nameout1);
   FILE *file_out=fopen(nameout, "w");
   printf("Writing %s\n", nameout);
   fprintf(file_out, "# read binding sites in file %s\n", file_site);
@@ -1469,7 +1532,7 @@ void Binding_sites(int *site,
     ave_p[k]=sum/Na;
     }*/
 
-  sprintf(nameout, "%s_binding_residues.dat", nameout1);
+  sprintf(nameout, "%s.binding_residues.dat", nameout1);
   file_out=fopen(nameout, "w");
   printf("Writing %s\n", nameout);
   fprintf(file_out, "#res\taa\tchain");
@@ -1498,9 +1561,10 @@ void Binding_sites(int *site,
 
   // Test pairs of sites
   if(N_sites<2){
-    for(j=0; j<numran; j++)free(site_res_ran[j]); return;
+    for(j=0; j<numran; j++)free(site_res_ran[j]);
+    return;
   }
-  sprintf(nameout, "%s_pairs_sites.dat", nameout1);
+  sprintf(nameout, "%s.pairs_sites.dat", nameout1);
   printf("Writing %s\n", nameout);
   file_out=fopen(nameout, "w");
   fprintf(file_out, "# read binding sites in file %s\n", file_site);
@@ -1556,54 +1620,50 @@ void Binding_sites(int *site,
 
 }
 
-void Coupling_chains(float **Coup_dir, float **Coup_coord,
-		     float **Coup_deformation, float **Coup_dr_dir,
-		     char *ch, int Na, char *chain_label, int Nchain,
-		     char *nameout1)
+void Coupling_chains(double **Chain_dir, double **Chain_coord,
+		     double **Chain_def, double **Chain_cov,
+		     double **norm_chain, char *ch, int Na,
+		     char *chain_label, int Nchain, char *nameout1)
 {
-  printf("Computing average couplings of %d chains\n", Nchain);
+  printf("Printing average couplings of %d chains\n", Nchain);
 
-  double **Chain_cov=Chain_coup(Coup_dr_dir, Nchain, ch, Na);
-  double **Chain_dir=Chain_coup(Coup_dir, Nchain, ch, Na);
-  double **Chain_def=Chain_coup(Coup_deformation, Nchain, ch, Na);
-  double **Chain_coord=Chain_coup(Coup_coord, Nchain, ch, Na);
 
-  char header[200], nameout[200];;
-  sprintf(header, "#chain1 chain2 ");
-  if(Chain_dir)sprintf(header,  "%s Directionality", header);
-  if(Chain_coord)sprintf(header,"%s Coordination", header);
-  if(Chain_cov)sprintf(header,  "%s Covariance", header);
-  if(Chain_def)sprintf(header,  "%s Deformation", header);
+  char nameout[200];
+  //sprintf(nameout, "%s.chain%c_couplings.dat", nameout1,chain_label[i]);
+  sprintf(nameout, "%s.chain_couplings.dat", nameout1);
+  FILE *file_out=fopen(nameout, "w");
+  printf("Writing %s\n", nameout);
 
+  char header[200]; sprintf(header, "#chain1 chain2 ");
+  if(Chain_dir)strcat(header,  " Directionality");
+  if(Chain_coord)strcat(header," Coordination");
+  if(Chain_cov)strcat(header,  " Covariance");
+  if(Chain_def)strcat(header,  " Deformation");
+  strcat(header,  " Proximity_weight");
+  fprintf(file_out, "%s\n", header);
 
   for(int i=0; i<Nchain; i++){
-    sprintf(nameout, "%s_chain%c_couplings.dat",
-	    nameout1, chain_label[i]);
-    FILE *file_out=fopen(nameout, "w");
-    fprintf(file_out, "%s\n", header);
-    printf("Writing %s\n", nameout);
-    for(int j=0; j<Nchain; j++){
+    for(int j=i; j<Nchain; j++){
       fprintf(file_out, "%c %c ", chain_label[i], chain_label[j]);
-      if(Chain_dir)fprintf(file_out, " %.4f", Chain_dir[i][j]);
-      if(Chain_coord)fprintf(file_out, " %.4f", Chain_coord[i][j]);
-      if(Chain_cov)fprintf(file_out, " %.4f", Chain_cov[i][j]);
-      if(Chain_def)fprintf(file_out, " %.4f", Chain_def[i][j]);
+      if(Chain_dir)fprintf(file_out, " %.4g", Chain_dir[i][j]);
+      if(Chain_coord)fprintf(file_out, "\t%.4g", Chain_coord[i][j]);
+      if(Chain_cov)fprintf(file_out, "\t%.4g", Chain_cov[i][j]);
+      if(Chain_def)fprintf(file_out, "\t%.4g", Chain_def[i][j]);
+      fprintf(file_out, "\t%.4g", norm_chain[i][j]);
       fprintf(file_out, "\n");
     }
-    fclose(file_out);
   }
-  if(Chain_cov)Empty_matrix_d(Chain_cov, Nchain);
-  if(Chain_dir)Empty_matrix_d(Chain_dir, Nchain);
-  if(Chain_def)Empty_matrix_d(Chain_def, Nchain);
-  if(Chain_coord)Empty_matrix_d(Chain_coord, Nchain);
+  fclose(file_out);
 }
 
-double **Chain_coup(float **Coupling, int Nchain, char *ch, int Na){
+double **Chain_coup(float **Coupling, double **norm, float **Proximity,
+		    int Nchain, char *ch, int Na)
+{
   if(Coupling==NULL)return(NULL);
   double **Chain_coup=Allocate_mat2_d(Nchain, Nchain);
-  int counts[Nchain][Nchain], ichain, jchain;
+  int ichain, jchain;
   for(ichain=0; ichain<Nchain; ichain++){
-    for(jchain=0; jchain<=ichain; jchain++)counts[ichain][jchain]=0;
+    for(jchain=0; jchain<=ichain; jchain++)norm[ichain][jchain]=0;
   }
 
   char ch_old_i=ch[0]; ichain=0;
@@ -1612,15 +1672,171 @@ double **Chain_coup(float **Coupling, int Nchain, char *ch, int Na){
     char ch_old_j=ch[0]; jchain=0;
     for(int ja=0; ja<ia; ja++){
       if(ch[ja]!=ch_old_j){ch_old_j=ch[ja]; jchain++;}
-      Chain_coup[ichain][jchain]+=Coupling[ia][ja];
-      counts[ichain][jchain]++;
+      float w=Proximity[ia][ja];
+      Chain_coup[ichain][jchain]+=w*Coupling[ia][ja];
+      norm[ichain][jchain]+=w;
     }
   }
   for(ichain=0; ichain<Nchain; ichain++){
     for(jchain=0; jchain<=ichain; jchain++){
-      Chain_coup[ichain][jchain]/=counts[ichain][jchain];
-      Chain_coup[jchain][ichain]=Chain_coup[ichain][jchain];
+      Chain_coup[ichain][jchain]/=norm[ichain][jchain];
+      if(jchain!=ichain){
+	Chain_coup[jchain][ichain]=Chain_coup[ichain][jchain];
+	norm[jchain][ichain]=norm[ichain][jchain];
+      }
     }
   }
   return(Chain_coup);
 }
+
+void Print_interface_coupling(struct interaction *Int_list_inter,
+			      int N_int_inter,
+			      struct interaction *Int_list, int N_int,
+			      atom *atoms, int Nchain, char *nameout,
+			      float **Coup_dir, float**Coup_coord,
+			      float **Coup_deformation, 
+			      double **Chain_dir, double **Chain_coord,
+			      double **Chain_def, double **norm_chain, int Na)
+{
+  char name2[200]; sprintf(name2, "%s.interface.dat", nameout);
+  FILE *file_out=fopen(name2, "w");
+  printf("Writing %s\n", name2);
+
+  int ia, ja, n, npair=N_int_inter; float y;
+  double Ave_dir=0, Ave_coord=0, Ave_def=0;
+  double Min_dir=100, Min_coord=100, Max_def=0;
+  int mpair=0, mpair_max=Nchain*(Nchain-1)/2, m;
+  int c1[mpair_max], c2[mpair_max];
+  for(n=0; n<N_int_inter; n++){
+    ia=(atoms+Int_list_inter[n].i1)->res;
+    ja=(atoms+Int_list_inter[n].i2)->res;
+    if((ia>=Na)||(ja>=Na)){npair--; continue;}
+    {
+      int ic1=(atoms+Int_list_inter[n].i1)->chain;
+      int ic2=(atoms+Int_list_inter[n].i2)->chain;
+      if(ic1!=ic2){
+	if(ic1>ic2){int tmp=ic2; ic2=ic1; ic1=tmp;}
+	for(m=0; m<mpair; m++)if(ic1==c1[m] && ic2==c2[m])break;
+	if(m==mpair){c1[m]=ic1; c2[m]=ic2; mpair++;}
+      }
+    }
+    if(Coup_dir){
+      y=Coup_dir[ia][ja]; Ave_dir+=y; if(y<Min_dir)Min_dir=y;
+    }
+    if(Coup_coord){
+      y=Coup_coord[ia][ja]; Ave_coord+=y; if(y<Min_coord)Min_coord=y;
+    }
+    if(Coup_deformation){
+      y=Coup_deformation[ia][ja]; Ave_def+=y; if(y>Max_def)Max_def=y;
+    }
+  }
+  if(npair){Ave_dir/=npair; Ave_coord/=npair; Ave_def/=npair;}
+
+  int numran=200;
+  unsigned long iran=randomgenerator();
+  if(ini_ran==0){
+    InitRandom((RANDOMTYPE)iran); ini_ran=1;
+  }
+  double Ave_dir_ran=0, Ave_coord_ran=0, Ave_def_ran=0;
+  double p_dir_ran=0, p_coord_ran=0, p_def_ran=0;
+  for(int kran=0; kran<numran; kran++){
+    npair=N_int_inter;
+    double Ave_dir_tmp=0, Ave_coord_tmp=0, Ave_def_tmp=0;
+    for(int k=0; k<N_int_inter; k++){
+      n=RandomFloating()*N_int;
+      if(n>=N_int){
+	printf("WARNING in RandomFloating\n"); n=N_int-1;
+      }
+      ia=(atoms+Int_list[n].i1)->res;
+      ja=(atoms+Int_list[n].i2)->res;
+      if((ia>=Na)||(ja>=Na)){npair--; continue;}
+      if(Coup_dir)Ave_dir_tmp+=Coup_dir[ia][ja];
+      if(Coup_coord)Ave_coord_tmp+=Coup_coord[ia][ja];
+      if(Coup_deformation)Ave_def_tmp+=Coup_deformation[ia][ja];
+    }
+    Ave_dir_tmp/=npair; Ave_dir_ran+=Ave_dir_tmp;
+    if(Ave_dir_tmp>Ave_dir)p_dir_ran++;
+    Ave_coord_tmp/=npair; Ave_coord_ran+=Ave_coord_tmp;
+    if(Ave_coord_tmp>Ave_coord)p_coord_ran++;
+    Ave_def_tmp/=npair; Ave_def_ran+=Ave_def_tmp;
+    if(Ave_def_tmp<Ave_def)p_def_ran++;
+  }
+  
+  fprintf(file_out,"# %d interface contacts\n", N_int_inter);
+  fprintf(file_out, "Directionality_coupling: "
+	  "Ave= %.4g Min= %.4g Random= %.2g p> = %.3g\n",
+	  Ave_dir, Min_dir, Ave_dir_ran/numran, p_dir_ran/numran);
+  fprintf(file_out, "Coordination_coupling:   "
+	  "Ave= %.4g Min= %.4g Random= %.2g p> = %.3g\n",
+	  Ave_coord, Min_coord, Ave_coord_ran/numran, p_coord_ran/numran);
+  fprintf(file_out, "Deformation_coupling:    "
+	  "Ave= %.4g Max= %.4g Random= %.2g p< = %.3g\n",
+	  Ave_def, Max_def, Ave_def_ran/numran, p_def_ran/numran);
+
+  double Ave_chain_coord=0, Ave_chain_dir=0, norm=0;
+  fprintf(file_out, "# %d pairs of chains: ", mpair);
+  for(m=0; m<mpair; m++){
+    int ic1= c1[m], ic2= c2[m];
+    fprintf(file_out, " %d-%d", ic1, ic2);
+    Ave_chain_coord+=Chain_coord[ic1][ic2]*norm_chain[ic1][ic2];
+    Ave_chain_dir+=Chain_dir[ic1][ic2]*norm_chain[ic1][ic2];
+    norm+=norm_chain[ic1][ic2];
+  }
+  fprintf(file_out, "\n");
+  Ave_chain_coord/=norm; Ave_chain_dir/=norm; 
+  
+  float Chain_dir_coeff=0, Chain_coord_coeff=0, Ave_coord_coeff=0,
+    Ave_dir_coeff=0, bias=0, G_NM_coeff=0, DG_NM_coeff=0, DG_cont_coeff=0;
+  if(strcmp(DOF_LABEL,"PHI")==0){ 
+    // Param: KAPPA=5.0, SCALE_COORD=2, SCALE_D=2 Err=0.57 bias=0.37
+    G_NM_coeff=0.0; DG_NM_coeff=31.3; DG_cont_coeff=0.27;
+    Ave_coord_coeff=-14.2; Ave_dir_coeff=-3.61;
+    Chain_coord_coeff=-13.3; Chain_dir_coeff=-4.16; bias=0.37;
+  }else if(strcmp(DOF_LABEL,"PHIPSI")==0){
+    // Param: KAPPA=8.2, SCALE_COORD=2, SCALE_D=2 Err=0.59 bias=0.44
+    G_NM_coeff=0; DG_NM_coeff=26.2; DG_cont_coeff=0.325;
+    Ave_coord_coeff=-13.8; Ave_dir_coeff=-3.7;
+    Chain_coord_coeff=-13.8; Chain_dir_coeff=-4.58; bias=0.44;
+  }else if(strcmp(DOF_LABEL,"PHIPSIOME")==0){
+    // Param: KAPPA=15, SCALE_COORD=2, SCALE_D=2 Err=0.63 bias=0.50
+    G_NM_coeff=0; DG_NM_coeff=21.2; DG_cont_coeff=0.335;
+    Ave_coord_coeff=-12.5; Ave_dir_coeff=-3.64;
+    Chain_coord_coeff=-13.0; Chain_dir_coeff=-4.66; bias=0.50;
+  }else if(strcmp(DOF_LABEL,"PHIPSIOMESCH")==0){
+    // Param: KAPPA=14, SCALE_COORD=2, SCALE_D=2 Err=0.60 bias=24.7
+    G_NM_coeff=1.08; DG_NM_coeff=0; DG_cont_coeff=0.255;
+    Ave_coord_coeff=-10.8; Ave_dir_coeff=-5.22;
+    Chain_coord_coeff=-10.5; Chain_dir_coeff=-5.16; bias=24.7;
+  }
+  double DG_bind=
+    G_NM_coeff*G_NM_holo+
+    DG_NM_coeff*DG_NM_internal+
+    DG_cont_coeff*E_cont_bind+
+    Ave_coord_coeff*Ave_coord+
+    Ave_dir_coeff*Ave_dir+
+    Chain_coord_coeff*Ave_chain_coord+
+    Chain_dir_coeff*Ave_chain_dir+
+    bias;
+  fprintf(file_out,"# Predicted binding free energy: %.4g\n", DG_bind);
+  fprintf(file_out,"# Calculated as: %.4g*G_NM + %.4g*DG_NM + %.4g*DE_cont"
+	  " + %.4g*Ave_coord_interface + %.4g*Ave_dir_interface"
+	  " + %.4g*Ave_coord_CHAIN + %.4g*Ave_dir_chain + %.4g\n",
+	  G_NM_coeff, DG_NM_coeff, DG_cont_coeff,
+	  Ave_coord_coeff, Ave_dir_coeff, Chain_coord_coeff, Chain_dir_coeff,
+	  bias);
+  fprintf(file_out, "# Coordination computed as Coord_ij="
+	  "exp(-%.3g*<(dij-<dij>)^2)\n", SCALE_COORD);
+  fprintf(file_out, "# Interchain contacts weighted with "
+	  "Proximity_ij=exp(-d_ij/%.3g)\n", SCALE_D);
+  fprintf(file_out, "# G_NM/nres  = %.4g\n", G_NM_holo);
+  fprintf(file_out, "# DG_NM_internal/nres = %.4g\n", DG_NM_internal);
+  fprintf(file_out, "# DG_NM_rigid/nres = %.4g\n", DG_NM_rigid);
+  //fprintf(file_out, "# DG_NM/nres = %.4g\n", DG_NM_rigid+DG_NM_internal);
+  fprintf(file_out, "# DE_cont = %.4g\n", E_cont_bind);
+  fprintf(file_out, "# Ave_inter_coord = %.4g\n", Ave_coord);
+  fprintf(file_out, "# Ave_inter_dir   = %.4g\n", Ave_dir);
+  fprintf(file_out, "# Ave_chain_coord = %.4g\n", Ave_chain_coord);
+  fprintf(file_out, "# Ave_chain_dir   = %.4g\n", Ave_chain_dir);
+
+  fclose(file_out);
+  }

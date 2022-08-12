@@ -4,34 +4,42 @@
 #==============================
 #The input pdb must be specified in the records "PDB1" and "CH1" 
 #Chain A: CH1= A Default: First chain in PDB file CH1= ALL : all chains, e.g.:
+# 6q8f 6s1a 7asv
+#PDB1= /data/ortizg/databases/pdb/2bq4.pdb
 #PDB1= /data/ortizg/databases/pdb/2kho.pdb 
 #PDB1= /data/ortizg/databases/pdb/2c2g.pdb # 1cd5.pdb
-PDB1= /data/ortizg/databases/pdb/4ake.pdb
-#PDB1= /data/ortizg/databases/pdb/1ank.pdb
+#PDB1= /data/ortizg/databases/pdb/4ake.pdb
 #PDB1= /data/ortizg/databases/pdb/2cri.pdb
 #PDB1= /data/ortizg/databases/pdb/102l.pdb
-#PDB2= /data/ortizg/databases/pdb/1aon.pdb
+#PDB1= /data/ortizg/databases/pdb/1aon.pdb
 #PDB1= /data/ortizg/databases/pdb/1kde.pdb
 #PDB1= /data/ortizg/databases/pdb/1mq4.pdb
 #PDB1= /data/ortizg/databases/pdb/132l.pdb
+#PDB1= /data/ortizg/databases/pdb/2wb4.pdb
+#PDB1= /data/ortizg/databases/pdb/1amq.pdb
+PDB1= /data/ortizg/databases/pdb/1l63.pdb
 CH1=  A  (A, ABCDE, ALL)
 #If the conformation change between two proteins is required, it must be
 #specified with the records "PDB2" and "CH2", e.g.
 #PDB2= /data/ortizg/databases/pdb/1f4p.pdb
 #PDB2= /data/ortizg/databases/pdb/1ank.pdb
-#PDB2= /data/ortizg/databases/pdb/4ake.pdb
 #PDB2= /data/ortizg/databases/pdb/107l.pdb
 #PDB2= /data/ortizg/databases/pdb/1kp8.pdb
 #PDB2= /data/ortizg/databases/pdb/4b9q.pdb
-#PDB2= /data/ortizg/databases/pdb/1ol6.pdb
+#PDB1= /data/ortizg/databases/pdb/1ol6.pdb
 #PDB2= /data/ortizg/databases/pdb/175l.pdb
+#PDB2= /data/ortizg/databases/pdb/2wb4.pdb
+#PDB2= /data/ortizg/databases/pdb/1qir.pdb
+PDB2= /data/ortizg/databases/pdb/1cv1.pdb 245l.pdb
 CH2= A
+#BINDING= A
+#FOLDING=1
 #
 # 2) Model parameters (recommended: use the default)
 #===================================================
 # Degrees of freedom:
 DOF=  TORS             ! Torsional degrees of freedom (alternative: CART)
-PSI=0                  ! Use psi angle as degree of freedom?
+PSI=1                  ! Use psi angle as degree of freedom?
 OMEGA=0                ! Use mainchain omega as degree of freedom? (default:NO)
 #OMEGA=-1              ! Use mainchain omega only for CISTRANS bonds?(def:NO)
 SIDECHAIN=0            ! Use sidechain degrees of freedom?
@@ -42,16 +50,16 @@ REF= ALL
 # Potential energy
 CONT_TYPE= MIN         ! Contact definition (allowed: MIN DIR SCB CB CA HB HNM) 
 CONT_THR= 4.5          ! Threshold for contacts
-K_PHI=2.0              ! Elastic constant for angle phi
-K_PSI=2.0              ! Elastic constant for angle psi
-K_OMEGA=2.0              ! Elastic constant for angle omega (if present)
+K_PHI=0.5 10.0 0.2              ! Elastic constant for angle phi
+K_PSI=0.5               ! Elastic constant for angle psi
+K_OMEGA=1.0              ! Elastic constant for angle omega (if present)
 K_CHI=0.5              ! Elastic constant for angle chi (if present)
 K_BL=1.0               ! Elastic constant for bond length
 K_BA=0.5               ! Elastic constant for bond angle
 #K_TOR=0.1              ! Elastic constant for torsion angle
 EXP_HESSIAN= 6        ! Force constant: k~r^(-e)
 FIT_B= 1     	       ! Fit B factors if present? (default YES)
-KAPPA= 218
+KAPPA= 200 300000
 # Normal modes
 E_MIN=0.00000001	! Threshold on eigenvalues w^2/<w^2>
 COLL_THR=10            ! Select modes with number of moved atoms > COLL_THR
@@ -65,13 +73,13 @@ LABEL=0                 ! Print model parameters in file names?
 PRINT_SUMM= 1		! Print summary of results (1=TRUE)
 PRINT_CONT_MAT=0	! Print contact matrix? (1=TRUE)
 DEBUG=0			! Print debugging information (messy)
-ANHARMONIC= 1           ! Anharmonicity analysis for all modes
-PRINT_PDB_ANHARM=1      ! Print PDB while computing anharmonic energy
+ANHARMONIC= 0           ! Anharmonicity analysis for all modes
+PRINT_PDB_ANHARM=0      ! Print PDB while computing anharmonic energy
 N_PDB_print=5           ! Number of PDB to print in each dir if PRINT_PDB_ANH
 #
 # 3B) Normal modes
 #----------------------
-NMODES=0 8		! Number of modes to print (default zero)
+NMODES=8 0		! Number of modes to print (default zero)
 PRINT_PDB= 0		! Print modes as PDB files? (1=TRUE)
 AMPLITUDE=2.0           ! Maximum amplitude of the PDB movie, 
 #                       ! stop when the repulsion energy reaches E_THR
@@ -88,7 +96,7 @@ AMPL_FACT=2.0          ! Increase factor between simulated amplitudes
 #
 # 3D) Conformational change
 #---------------------------
-PRINT_CHANGE=1       ! Print movie of conformational change? (slow)
+PRINT_CHANGE=0       ! Print movie of conformational change? (slow)
 PRINT_FORCE= 0       ! Print the force that would generate the observed
 #                      conformational change
 STEP_MAX= 0.15        ! Maximum RMSD between steps for greedy confchange
@@ -110,26 +118,26 @@ ALLOSTERY=0	! Compute dynamical couplings?
 PROF_TYPE=C		! A=average coupling P=Principal eigenvector of coup.
 #			! C= effective connectivity of coup. 
 ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
-SIGMA= 1.5 		! if(ALL_PAIRS==0), couplings are printed if
+SIGMA= 2.0 		! if(ALL_PAIRS==0), couplings are printed if
 #      			!                    c_ij >/< <c>+/- SIGMA*st.dev.
-PRINT_DEF_COUPLING=0	! Print deformation couplings
+PRINT_DEF_COUPLING=1	! Print deformation couplings
 # Deformation coupling A_ij is the deformations produced on site j by a
 # unitary force applied in j in the direction that maximizes the deformation.
 # Output file: <>_deformation_coupling.dat
-PRINT_DIR_COUPLING= 0	! Print directionality couplings
+PRINT_DIR_COUPLING= 1	! Print directionality couplings
 # Directionality coupling D_ij is the Boltzmann average of the scalar
 # product of the direction of motion of the residues i and j. If it is
 # positive the two residues tend to move in the same direction.
 # Output file: <>_directionality_coupling.dat
-PRINT_COORD_COUPLING=0			  ! Print coordination couplings
+PRINT_COORD_COUPLING=1			  ! Print coordination couplings
 # Coordination coupling C_ij is the Boltzmann average of the RMS
 # fluctuations of the distance d_ij with respect to the equilibrium value.
 # If it is small the two residues maintain an almost fixed distance during
 # their dynamics.
 # Output file: <>_coordination_coupling.dat
-PRINT_SIGMA_DIJ=1       ! Print variance of Dij (only CA atoms)
+PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
 # Note that the coordination coupling is Coord_ij= 1.-0.5*sqrt(Var(Dij))
-SITES=<file_site>	! File where functional sites are read.
+#SITES=<file_site>	! File where functional sites are read.
 # If not specified, read from the SITE record in the PDB file.
 # The program computes the mean and the significance of the coupling of pairs
 # of residues within (<>_binding_sites.dat) and between (<>_pairs_sites.dat)

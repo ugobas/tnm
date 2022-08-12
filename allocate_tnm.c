@@ -2,14 +2,15 @@
 #include "tnm.h"
 #include <stdlib.h>
 
-void Allocate_tors(struct Tors *X, int N_axes, int N_cart, int N_modes)
+void Allocate_tors(struct Tors *X, int N_axes, int N_Cart, int N_modes)
 {
   X->N_axes=N_axes;
-  X->N_cart=N_cart;
-  X->Cart=malloc(N_cart*sizeof(float));
+  X->N_Cart=N_Cart;
+  X->Cart=malloc(N_Cart*sizeof(float));
   X->Tors=malloc(N_axes*sizeof(float));
   X->MW_Tors=malloc(N_axes*sizeof(float));
   X->coeff=malloc(N_modes*sizeof(float));
+  X->RMSD=0; X->M=0; 
 }
 
 void Empty_tors(struct Tors X){

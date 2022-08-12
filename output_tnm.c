@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <math.h>
 
+extern float Freq_unit;
 
 void Print_modes(int N_print, char *nameout,
 		 char *label, int *select,
@@ -145,8 +146,8 @@ int Print_PDB_mode_old(char *nameout, int ia, float *Cart_mode,
   return(0);
 }
 
-
-void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,float M_sqrt,int anharmonic,float xkappa)
+void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,
+			float M_sqrt,int anharmonic,float xkappa)
 { 
   int i;
   FILE *file_out; char outfile[200];
@@ -156,6 +157,7 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,float 
   float kappa=Collectivity_norm1(NM.sigma2, NM.N);
   fprintf(file_out, "# Reciprocal collectivity of fluctuations=  %.1f\n",kappa);
   fprintf(file_out, "# kappa=  %.3f\n",xkappa);
+  float N_sqrt=sqrt(NM.N_Cart/3);
 
   double norm=0; for(i=0; i<NM.N; i++)norm+=NM.sigma2[i];
   if(anharmonic){
@@ -171,12 +173,15 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,float 
 	    Anhar_str/norm);
   }
 
+  fprintf(file_out, "# Frequency reported in internal units: %.3f ps^(-1),"
+	  " kT/h/ is %.3g internal units (om-2)= %.3g\n",
+	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/0.1482);
   fprintf(file_out,"#mode pc_therm cumul ");
   fprintf(file_out,"om-2(harm) ");
   if(anharmonic)fprintf(file_out, "om-2(corr) om-2(anha) ");
-  fprintf(file_out," RMSD  C_cart");
-  if(NM.MW_Tors_coll)fprintf(file_out, " C_MW");
-  if(NM.Tors_coll)fprintf(file_out, " C_tors");
+  fprintf(file_out," RMSD  Coll_cart");
+  if(NM.MW_Tors_coll)fprintf(file_out, " Coll_MW");
+  if(NM.Tors_coll)fprintf(file_out, " Coll_tors");
   fprintf(file_out, " Max_dev_atom");
   /*fprintf(file_out, " Anharmonicity_(ene) Anharmonicity_(str)");
     fprintf(file_out, " Max_RMSD(DE<E_THR*E_nat)"); //, E_THR*/
@@ -188,10 +193,11 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,float 
     sum+=NM.sigma2[i];
     fprintf(file_out, "%5d  %6.4f %5.3f  ",i, NM.sigma2[i]/norm, sum/norm);
     fprintf(file_out, "%7.4g ",NM.sigma2[i]);
-    if(anharmonic)
+    if(anharmonic){
       fprintf(file_out,"%7.4g %7.4g  ",
 	      xkappa*NM.sigma2_anhar[i],NM.sigma2_anhar[i]);
-    fprintf(file_out, " %7.3g", 1./(M_sqrt*sqrt(NM.omega2[i])));
+    }
+    fprintf(file_out, " %7.3g", 1./(N_sqrt*NM.omega[i])); //M_sqrt*
     fprintf(file_out, "  %5.3f", NM.Cart_coll[i]);
     if(NM.MW_Tors_coll)fprintf(file_out, " %5.3f", NM.MW_Tors_coll[i]);
     if(NM.Tors_coll)fprintf(file_out, " %5.3f", NM.Tors_coll[i]);

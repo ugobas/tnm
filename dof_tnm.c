@@ -48,10 +48,12 @@ int Count_interactions(atom *atoms, int natoms,
 
 float D2_GAP=6.5;
 int Count_gaps(struct bond *bonds, int natoms);
-int Select_axes_int(struct axe *axes, int *N_axes, int start,
+int Select_axes_int(int *skipped, struct axe *axes, int *N_axes, int start,
 		    atom *atoms, int natoms, int MIN_INT);
 int Last_axe(int *aa, struct axe *axes, int ini, int n, int i);
 struct bond *Next_bond(struct bond *bond, int ibond, int nbond);
+void Set_rigid(struct rigid *rigid_tmp, int *nrigid,
+	       struct bond *bond, int prev_chain, int N_axes);
 
 /*********************************************************************/
 // Auxiliary
@@ -66,6 +68,8 @@ struct axe *Set_DegofFreed(int *naxe,     // Number of degrees of freedom
 			   int *nmain,    // Number of mainaxes
 			   int *nskip,    // Skipped mainaxes
 			   int *N_diso,   // Number of disorder gaps
+			   struct rigid **Rigid_dof, // Chains, axe index
+			   int *nrigid,  // N. rigid body dofs
 			   struct bond *bonds,  // Covalent topology
 			   atom *atoms,   // Pointer to protein atoms
 			   int natoms,    // Number of protein atoms
@@ -118,7 +122,7 @@ struct axe *Set_DegofFreed(int *naxe,     // Number of degrees of freedom
   for(ichain=0; ichain<Nchain; ichain++){
     chain->ini_main=-1;
     chain->last_atom=chain->ini_atom+chain->natoms-1;
-    printf("Chain %d type %d atoms=%d-%d\n",
+    printf("Chain %d type %d atoms= %d-%d\n",
 	   ichain+1, chain->type, chain->ini_atom, chain->last_atom);
     for(i=chain->last_atom; i>=chain->ini_atom; i--){
       if(refatom[i]>=0){chain->last_ref=refatom[i]; break;}
@@ -144,7 +148,8 @@ struct axe *Set_DegofFreed(int *naxe,     // Number of degrees of freedom
      of interactions is at least MIN_INT
   */
   struct axe *axes=malloc(N_axe_max*sizeof(struct axe)), *axe=axes;
-  int N_axes=0, nrigid=0;
+  int N_axes=0; 
+  *nrigid=0; struct rigid rigid_tmp[nres];
   struct axe axe_side[3*nres]; int N_side=0;
   struct side_chain sc; sc.res=-1;
   // Store main chain and side chain dofs for polypeptide and nuc. acids
@@ -156,46 +161,70 @@ struct axe *Set_DegofFreed(int *naxe,     // Number of degrees of freedom
   int last_a=chain->last_atom, first_atom;
   int last_ref=chain->last_ref, oldref=0;
   int ctype=chain->type, ndof=0;
+  int prev_chain=0;
   for(ibond=2; ibond<natoms; ibond++){
     bond=bonds+ibond;
     if(bond->atom==NULL)break;
     //ALIGN
-    if(bond->atom->ali<0)continue;
-    if(bond->previous==NULL)continue;
+    if(bond->atom->ali<0){
+      printf("Not aligned atom %d\n", ibond); continue;
+    }
+    if(bond->previous==NULL){
+      printf("No previous of %d\n", ibond); continue;
+    }
     if((bond->atom->chain!=bond->previous->atom->chain)||(ichain<0)){
       ichain++; chain=chains+ichain;
+      prev_chain=bond->previous->atom->chain;
       last_r=chain->ini_res+chain->nres-1;
       last_a=chain->last_atom;
       last_ref=chain->last_ref;
       ctype=chain->type;
       achain=0;
     }
-    if(ichain>=Nchain)break;
-    if((achain<=2)&&(ichain)){
+    if(ichain>=Nchain){
+      printf("chain %d of %d, leaving\n", ichain+1, Nchain); break;
+    }
+    //printf("achain= %d %d\n", achain, ctype);
+    if((achain<=2)&&(ichain) &&  bond->atom->main){
       first_atom=bond->i_atom;
-      if(achain==0){
+      if(achain==0 ){
 	Set_dof(&axe, &N_axes, 't', bond->previous, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
 	Set_dof(&axe, &N_axes, 'l', bond, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
 	Set_dof(&axe, &N_axes, 'a', bond, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
 	(axe-3)->rigid=1; (axe-2)->rigid=1; (axe-1)->rigid=1;
-	nrigid+=3;
+	printf("Rigid body: tla %s%d-%s%d\n",
+	       bond->previous->atom->name, bond->previous->atom->chain,
+	       bond->atom->name, bond->atom->chain);
       }else if(achain==1){
 	Set_dof(&axe, &N_axes, 't', bond->previous, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
 	Set_dof(&axe, &N_axes, 'a', bond, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
-	(axe-2)->rigid=1; (axe-1)->rigid=1; nrigid+=2;
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
+	(axe-2)->rigid=1; (axe-1)->rigid=1;
+	printf("Rigid body: ta %s%d-%s%d\n",
+	       bond->previous->atom->name, bond->previous->atom->chain,
+	       bond->atom->name, bond->atom->chain);
       }else if(achain==2){
 	Set_dof(&axe, &N_axes, 't', bond->previous, first_atom, &ndof,
 		&oldref, refatom, natoms, last_a, last_ref);
-	(axe-1)->rigid=1; nrigid+=1;
+	Set_rigid(rigid_tmp, nrigid, bond, prev_chain, N_axes);
+	printf("Rigid body: t %s%d-%s%d\n",
+	       bond->previous->atom->name, bond->previous->atom->chain,
+	       bond->atom->name, bond->atom->chain);
+	(axe-1)->rigid=1;
       }
-      if(bond->atom->main)achain++; // Number of amino acid in the chain
+      achain++; // Number of amino acid in the chain
     }else{
       // axe describes a rotation around bond
+
       if(bond->terminal)continue;
       //if(strncmp(bond->atom->name,"CB", 2)==0)continue;
       if(ctype==0){
@@ -250,30 +279,49 @@ struct axe *Set_DegofFreed(int *naxe,     // Number of degrees of freedom
   if(ichain != Nchain){
     printf("WARNING, expected %d aligned chains, found %d\n", Nchain, ichain);
   }
-  printf(" %d rigid degrees of freedom found (expected %d for %d chains)\n",
-	 nrigid, ndof_rb, Nchain);
-  printf("%d mainchain degrees of freedom\n", N_axes-nrigid);
+  printf("%d rigid degrees of freedom found (expected %d for %d chains)\n",
+	 *nrigid, ndof_rb, Nchain);
+  printf("%d mainchain degrees of freedom\n", N_axes-*nrigid);
   //exit(8);
 
   // Exclude dof with few interactions (except rigid body)
   *nskip=0; int nskip_side=0;
   if(MIN_INT>0){
     Count_interactions(atoms, natoms, Int_list, N_int);
-    /*printf("Main axes skipped since < %d interactions:\n", MIN_INT);
-      (*nskip)=
-      Select_axes_int(axes, &N_axes, 0, atoms, natoms, MIN_INT);
-      printf("\nSkipped %d axes over %d (main)\n", *nskip, N_axes+*nskip);
-    */
+    printf("Main axes skipped since < %d interactions:\n", MIN_INT);
+    int skipped[N_axes];
+    (*nskip)=
+      Select_axes_int(skipped, axes, &N_axes, 0, atoms, natoms, MIN_INT);
+    printf("\nSkipped %d axes over %d (main)\n", *nskip, N_axes+*nskip);
+    // Relabel rigid axes to take into account skipped dofs
+    for(i=0; i<(*nskip); i++){
+      int a=skipped[i];
+      for(int j=0; j<*nrigid; j++)
+	if(rigid_tmp[j].iaxe>a)rigid_tmp[j].iaxe--;
+    }
+   
     if(N_side){
       printf("Side axes skipped since < %d interactions:\n", MIN_INT_SIDE);
       nskip_side=
-	Select_axes_int(axe_side, &N_side, 0, atoms, natoms, MIN_INT_SIDE);
+	Select_axes_int(skipped, axe_side, &N_side, 0, atoms, natoms,
+			MIN_INT_SIDE);
       printf("\nSkipped %d axes over %d (side)\n",
 	     nskip_side, N_side+nskip_side);
+    // Relabel rigid axes to take into account skipped dofs
+      for(i=0; i<nskip_side; i++){
+	int a=skipped[i];
+	for(int j=0; j<*nrigid; j++)
+	  if(rigid_tmp[j].iaxe>a)rigid_tmp[j].iaxe--;
+      }
     }
   }
   (*nmain)=N_axes;
   (*naxe)=N_axes;
+  *Rigid_dof=malloc(*nrigid*sizeof(struct rigid));
+  for(int a=0; a<(*nrigid); a++){
+    (*Rigid_dof)[a]=rigid_tmp[a];
+  }
+
   if(N_side){
     struct axe *axe1=axes+N_axes, *axe2=axe_side; int a;
     for(a=0; a<N_side; a++){*axe1=*axe2; axe1++; axe2++;}
@@ -545,7 +593,7 @@ int Set_side_chains(struct axe *axes,
   int N_axes=0, ndof=0, numdof=0, sidedof=Nmain;
   int first_atom=-1, last_atom=0, last_ref=0; //first_ref=0
   int ibond, ires=-1, i;
-  char type[1], aa=' ';
+  char type[20], aa=' ';
   struct axe *axe=axes;
   struct bond *bond;
   int iref, oldref=1;
@@ -647,7 +695,7 @@ int Set_side_chains(struct axe *axes,
 	num_int+=atoms[i].N_int;
       }
       if(num_int >= MIN_INT){
-	if(a!=n)axes[n]=*axe; n++;
+	if(a!=n){axes[n]=*axe;} n++;
       }
     }
     N_axes=n;
@@ -823,7 +871,7 @@ void Axe_prot_side(struct axe *axe_side, int *N_side, struct side_chain *sc,
 }
 
 
-int Select_axes_int(struct axe *axes, int *N_axes, int start,
+int Select_axes_int(int *skipped, struct axe *axes, int *N_axes, int start,
 		    atom *atoms, int natoms, int MIN_INT)
 {
   int n_skipped=0;
@@ -832,7 +880,8 @@ int Select_axes_int(struct axe *axes, int *N_axes, int start,
     struct axe *axe=axes+a;
     if(a<last){
       struct axe *next=axe+1;
-      if(((next->type=='l')||(axe->type=='l')||(axe->type=='a'))&&((a+1)<last)){
+      if(((next->type=='l')||(axe->type=='l')||(axe->type=='a'))&&
+	 ((a+1)<last)){
 	next++;
       }
       last_a=next->first_atom;
@@ -841,11 +890,12 @@ int Select_axes_int(struct axe *axes, int *N_axes, int start,
     }
     int num_int=0;
     for(i=axe->first_atom; i< last_a; i++)num_int+=atoms[i].N_int;
-    if((num_int >= MIN_INT)||(axe->rigid)){
+    if((num_int >= MIN_INT)||(axe->rigid)){ //
       if(a!=n)axes[n]=*axe;
       n++;
     }else{
       printf("%c%d ", axe->type, a);
+      skipped[n_skipped]=a;
       n_skipped++;
     }
   }
@@ -857,7 +907,8 @@ int Last_axe(int *aa, struct axe *axes, int ini, int n, int iatom)
 {
   int a=*aa; struct axe *axe=axes+(*aa);
   while(a<n){
-    if(axe->first_atom>iatom)break; a++; axe++;
+    if(axe->first_atom>iatom)break;
+    a++; axe++;
   }
   if(a==0)return(-1);
   if(a==n){a--; axe--;}
@@ -874,4 +925,13 @@ struct bond *Next_bond(struct bond *bond, int ibond, int nbond){
     struct bond *b=bond+i; if(b->previous == bond)return(b);
   }
   printf("ERROR, no next bond found for bond %d\n", ibond); exit(8);
+}
+
+void Set_rigid(struct rigid *rigid_tmp, int *nrigid,
+	       struct bond *bond, int prev_chain, int N_axes)
+{
+  rigid_tmp[*nrigid].chain1=prev_chain;
+  rigid_tmp[*nrigid].chain2=bond->atom->chain;
+  rigid_tmp[*nrigid].iaxe=N_axes;
+  (*nrigid)++;
 }

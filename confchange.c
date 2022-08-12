@@ -33,6 +33,7 @@ int ALL_TYPES=0;
 extern Test_Diff(struct Tors *Diff, struct Reference Ref, struct Jacobian J);
 */
 struct Jacobian *J_CC=NULL;
+extern float Freq_unit;
 
 void Print_diff(int *num_dphi, char **name_dphi,
 		float **diff_angles, float **MW_diff_angles,
@@ -89,7 +90,7 @@ int Periodic_angles(float *dphi, struct axe *axe, int n);
 static float RMS(float *v, int n, int *outlier);
 unsigned long randomgenerator(void);
 static int ini_ran=0;
-long idum;
+static long idum;
 
 struct Normal_Mode NM_kin;
 extern void d_Diagonalize(int N, double **MATRIX, float *eigen_values,
@@ -142,24 +143,24 @@ float Examine_confchange(struct Tors *Diff,
     Set_reference(&Ref1, 0, "EB", atoms1, 0, natoms1);
   }
   // Compute RMSD
-  int N_cart=Ref1.N_cart; float coord_1[N_cart], coord_2[N_cart];
+  int N_Cart=Ref1.N_Cart; float coord_1[N_Cart], coord_2[N_Cart];
   Write_ref_coord_atom(coord_1, Ref1.N_ref, atoms1, Ref1.atom_num);
   Write_ref_coord_atom(coord_2, Ref1.N_ref, atoms2, Ref2.atom_num);
   */
 
-  int N_cart=ali_a.N_cart, i;
+  int N_Cart=ali_a.N_Cart, i;
   float rmsd=rmsd_mclachlan_f(coord_1, coord_2, ali_a.mass, ali_a.N_ref);
-  for (i=0;i<N_cart;i++)Diff->Cart[i]=coord_2[i]-coord_1[i];
+  for (i=0;i<N_Cart;i++)Diff->Cart[i]=coord_2[i]-coord_1[i];
 
   printf("Examining confchange, RMSD= %.2f\n", rmsd);
-  printf("Changing reference atoms from %d (modes) to %d (CC)\n",
-	 Ref1.N_cart/3, ali_a.N_ref);
+  printf("Changing reference atoms from %d (kin) to %d (CC)\n",
+	 Ref1.N_Cart/3, ali_a.N_ref);
 
   // Jacobian matrix
   int naxe=NM.N_axes;
   if(J_CC==NULL){
     J_CC=malloc(1*sizeof(struct Jacobian));
-    Allocate_Jacobian(J_CC, naxe, Ref1.N_cart);
+    Allocate_Jacobian(J_CC, naxe, Ref1.N_Cart);
     int first_kin[naxe], last_kin[naxe];
     Change_kin(first_kin, last_kin, axe, naxe, natoms1, Ref1);
     J_CC->N_kin=Compute_kinetic(J_CC, axe, naxe, atoms1, natoms1,Ref1,1);
@@ -168,7 +169,7 @@ float Examine_confchange(struct Tors *Diff,
   // Mass modes
   int MMASS=0;
   if(anharmonic==0){
-    Allocate_Normal_modes(&NM_kin, NM.N, NM.N_axes, NM.N_cart);
+    Allocate_Normal_modes(&NM_kin, NM.N, NM.N_axes, NM.N_Cart);
     d_Diagonalize(NM.N_axes, J_CC->T, NM_kin.omega2, NM_kin.Tors, 1);
     FILE *file_mode=NULL;
     if(MMASS){
@@ -190,7 +191,7 @@ float Examine_confchange(struct Tors *Diff,
       NM_kin.Tors_coll[i]=Collectivity_norm2(NM_kin.Tors[i], naxe)/naxe ;
       NM_kin.MW_Tors_coll[i]=Collectivity_norm2(NM_kin.MW_Tors[i],naxe)/naxe;
       NM_kin.Cart_coll[i]=
-	Collectivity_norm2(NM_kin.Cart[i], NM_kin.N_cart)/N_cart;
+	Collectivity_norm2(NM_kin.Cart[i], NM_kin.N_Cart)/N_Cart;
       //Predict_fluctuations(&NM_kin, NM_kin.sigma2);
       if(MMASS){
 	double cmax=0, c; int imax=0, j; float *mode=NM_kin.Tors[i];
@@ -286,7 +287,7 @@ float Examine_confchange(struct Tors *Diff,
 
   float Lambda=0; //thr=Para_confchange.RMSD_THR, 
   double M_tot=0, M_sqrt;
-  for(i=0; i<Ref1.N_cart; i+=3)M_tot+=Ref1.mass_coord[i];
+  for(i=0; i<Ref1.N_Cart; i+=3)M_tot+=Ref1.mass_coord[i];
   M_sqrt=sqrt(M_tot);
 
   // Different methods to obtain diff_phi
@@ -303,12 +304,14 @@ float Examine_confchange(struct Tors *Diff,
     if((ALL_TYPES==0)&&((i_dphi==0)||(i_dphi==3)))continue;
 
     if(i_dphi==1){
+      continue;
       /*sprintf(name, "Lasso regression");
       Lasso_confchange_fit(Diff, &NM, bonds, atoms1, natoms1, Ref1,
       coord_1, coord_2, name1);*/
       sprintf(name, "Modes fit"); 
       int type=0; // rank by frequency (0) or by overlap (1)?
       int NMODES=10; //10;
+      printf("Lasso regression of torsion angle changes\n");
       Mode_confchange_fit(Diff, &NM, bonds, atoms1, natoms1, Ref1, seq1,
 			  coord_1, coord_2, M_sqrt, name1, name_pdb,
 			  type, NMODES);
@@ -319,8 +322,10 @@ float Examine_confchange(struct Tors *Diff,
       else if(i_dphi==1){type='M'; continue;} // Substituted with Lasso
       else if(i_dphi==2){type='C';}
       sprintf(name, "Fit");
-      if(i_dphi)sprintf(name, "%s RRR", name);
-      sprintf(name, "%s type %c", name, type);
+      if(i_dphi)strcat(name, " RRR");
+      char tmp[40];
+      sprintf(tmp, " type %c", type); strcat(name, tmp);
+      printf("Ridge regression type %c of torsion angle changes\n",type);
       if(Convert_cart2torsion_fit(Diff, Ref1, J_CC, name1, type, &Lambda)<0){
 	fprintf(file_out, "WARNING, ridge regression has failed\n");
 	printf("WARNING, ridge regression has failed\n"); continue;
@@ -352,14 +357,14 @@ float Examine_confchange(struct Tors *Diff,
       printf("\nMaking conformation change. Time= %.2lf sec.\n",
 	     (clock()-t0)/nbtops); t0=clock();
     }
-    fprintf(file_out, "### Projection on normal modes\n");
+    fprintf(file_out, "### Projection on normal modes");
     Print_diff(&num_dphi, name_dphi, diff_angles, MW_diff_angles, c2_alpha,
 	       outlier_tors, Diff, J_CC, &NM, M_sqrt,
 	       bonds, atoms1, natoms1, Ref1, coord_1, coord_2,
 	       seq1, axe, nstruct, name, file_out, name_pdb,
 	       anharmonic, nameout, 0);
     if(MMASS && anharmonic==0){
-      fprintf(file_out, "### Projection on mass modes\n");
+      fprintf(file_out, "### Projection on mass modes");
       Print_diff(&num_dphi, name_dphi, diff_angles, MW_diff_angles, c2_alpha,
 		 outlier_tors, Diff, J_CC, &NM_kin, M_sqrt,
 		 bonds, atoms1, natoms1, Ref1, coord_1, coord_2,
@@ -393,7 +398,7 @@ float Examine_confchange(struct Tors *Diff,
       Print_angular_differences(MW_diff_angles, "MW", name_dphi, num_dphi,
       namenew, axe, NM.N_axes, seq1);*/
       
-      char nameout2[100]; int a;
+      char nameout2[200]; int a;
       sprintf(nameout2, "%s.Mode_projections.dat", namenew);
       printf("Writing mode projections in %s\n", nameout2);
       file_out=fopen(nameout2, "w");
@@ -424,11 +429,10 @@ float Examine_confchange(struct Tors *Diff,
     }
   }
 
-  Empty_Jacobian(*J_CC); // should probably not depend on nstruct==0, since alloc doesn't
-  free(J_CC); J_CC=NULL; //modyves: J_CC was never freed
-  if(anharmonic){
-    Empty_Normal_modes(NM_kin);
-  }
+  Empty_Jacobian(*J_CC);
+  // should probably not depend on nstruct==0, since alloc doesn't
+  free(J_CC); J_CC=NULL;
+  if(anharmonic)Empty_Normal_modes(NM_kin);
 
   return(rmsd);
 }
@@ -475,7 +479,7 @@ void Print_diff_fluct(struct Tors *Diff, struct Normal_Mode *NM,
   file_out=fopen(nameout, "w"); printf("Writing %s\n", nameout);
   fprintf(file_out, "# Squared fluctuations of Cartesian coordinates\n");
   fprintf(file_out, "# Thermal Conf.change\n");
-  for(a=0; a<NM->N_cart; a++){
+  for(a=0; a<NM->N_Cart; a++){
     fprintf(file_out,"%.4g\t%.4g\n", NM->cart_fluct[a],
 	    Diff->Cart[a]*Diff->Cart[a]);
   }
@@ -496,10 +500,14 @@ void Print_diff(int *num_dphi, char **name_dphi,
 		FILE *file_out, char *name_pdb,
 		int anharmonic, char *out, int whichmode)
 {
-  name_dphi[*num_dphi]=malloc(80*sizeof(char));
-  strcpy(name_dphi[*num_dphi], name);
-  fprintf(file_out, "##### %s", name);
+  // RMSD
+  double norm_c2=
+    Scalar_product_weighted(Diff->Cart,Diff->Cart,Ref.mass_coord,Ref.N_Cart);
+  Diff->RMSD=sqrt(norm_c2)/M_sqrt; Diff->M=M_sqrt*M_sqrt;
 
+  // Normal modes
+  int naxes=NM->N_axes;
+  int N_modes=NM->N, i, k, a;
   float *sigma2;
   if(anharmonic==0){
     sigma2=NM->sigma2;
@@ -510,204 +518,132 @@ void Print_diff(int *num_dphi, char **name_dphi,
     Predict_fluctuations(NM, sigma2);
   }
 
-  // Torsion angles
-  int naxes=NM->N_axes;
-  Periodic_angles(Diff->Tors, axe, naxes); // Remove 2pi
-  Diff->RMSD_Tors=RMS(Diff->Tors, naxes, outlier_tors);
-  printf("RMSD(Tors)= %.3f (without outliers)\n", Diff->RMSD_Tors);
-
-  // Project on normal modes
-  int N_modes=NM->N, i, k, a;
-  Compute_MW(Diff->MW_Tors, Diff->Tors, J);
-
-  float *c2=NM->confchange2, d_thr=0.05*M_sqrt;
-  double d, sum_d2=0, sum_sigma2=0;
-  int nm_thr=10, nmodes=0, iter=0;
-
-  while(nmodes<nm_thr){
-    sum_d2=0; sum_sigma2=0; nmodes=0;
-    for (i=0; i<N_modes; i++){
-      sum_sigma2+=sigma2[i];
-      d=Scalar_product(Diff->MW_Tors, NM->MW_Tors[i], NM->N_axes);
-      //d=NM->sigma2[i]*Scalar_product(Diff->Tors, NM->Tors[i], NM->N_axes);
-      //d=Scalar_product_weighted(Diff->Cart,NM->Cart[i],
-      //Ref.mass_coord,Ref.N_cart);
-      if(sigma2[i]==0 || fabs(d)<d_thr){d=0;}else{nmodes++;}
-      Diff->coeff[i]=d;
-      d*=d; c2[i]=d;
-      sum_d2+=c2[i];
-    }
-    if(nmodes<nm_thr){d_thr*=0.5; iter++; if(iter==10)break;}
+  int REG2=1; // Regularization: 0=L1 (thredhold on rmsd), 1=L2 (limit DE)
+  float c_thr=0, Lambda=0, rmsd_thr=0;
+  if(REG2==0){
+    rmsd_thr=0.2;  // Threshold on mode RMSD
+    float fmin=0.05; if(rmsd_thr<Diff->RMSD*fmin)rmsd_thr=Diff->RMSD*fmin;
+    c_thr=rmsd_thr*M_sqrt;
+  }else{
+    float Coeff=0.1;
+    sprintf(name, "RR DE C=%.2g", Coeff);
+    double sum_sigma2=0; // Regularization on DE=sum_a (c_a/w_a)^2
+    for (i=0; i<N_modes; i++)sum_sigma2+=sigma2[i];
+    Lambda=Coeff*sum_sigma2/N_modes;
   }
 
+   Periodic_angles(Diff->Tors, axe, naxes); // Remove 2pi
+   Compute_MW(Diff->MW_Tors, Diff->Tors, J);
+   // Initialize angles, they will be recomputed
+   for(a=0; a<naxes; a++)Diff->Tors[a]=0;
+
+  // Print name
+  name_dphi[*num_dphi]=malloc(80*sizeof(char));
+  strcpy(name_dphi[*num_dphi], name);
+  fprintf(file_out, "##### %s\n", name);
+
+  double sum_c2=0, sum_sigma2=0, Delta_E=0;
+  float *c2=NM->confchange2, c; int nmodes=0;
+  for (i=0; i<N_modes; i++){
+    if(sigma2[i]==0){c2[i]=0; continue;}
+    c=Scalar_product(Diff->MW_Tors, NM->MW_Tors[i], NM->N_axes);
+    if(REG2==0){
+      if(fabs(c)<c_thr){c=0;}else{nmodes++;}
+      /*}else{
+      c=Scalar_product_weighted(Diff->Cart,NM->Cart[i],
+				Ref.mass_coord,Ref.N_Cart);
+				c/=(1+Lambda/sigma2[i]);*/
+    }
+    float *tt=NM->Tors[i];
+    for(a=0; a<naxes; a++)Diff->Tors[a]+=c*tt[a];
+    Diff->coeff[i]=c;
+    c2[i]=c*c;
+    float de=c2[i]/sigma2[i];
+    if(REG2){float Lom2=Lambda/sigma2[i]; de/=((1+Lom2)*(1+Lom2));}
+    Delta_E+=de; 
+    if(fabs(c)>0)sum_sigma2+=sigma2[i]; // sum only selected modes
+    sum_c2+=c2[i];
+  }
+  for(i=0; i<N_modes;i++)c2[i]/=sum_c2; //norm_c2; // Normalize
+  Periodic_angles(Diff->Tors, axe, naxes); // Remove 2pi
+  Compute_MW(Diff->MW_Tors, Diff->Tors, J);
+
+  // Scale for equating random and real confchange
+  double scale2=sum_c2/sum_sigma2;
+
+  //fprintf(file_out, "# Total RMSD: %.3g %d modes\n", Diff->RMSD, N_modes);
+  if(REG2){
+    nmodes=N_modes; // L2 regularization, all modes are selected
+    fprintf(file_out, "# L2 regularization:\n"
+	    "# Mode coordinate c'_a = c_a/(1+Lambda*w_a^2)\n"
+	    "# Lambda=M*RMSD^2/(n*A^2)=sum_a 1/w_a^2/n = %.3g\n", Lambda);
+  }else{
+    fprintf(file_out, "# L1 regularization:\n"
+	    "# Eliminate modes that contribute < %.2g A: RMSD %.3g %d modes\n"
+	    "# Reduction factor: RMSD^2 %.3f Modes %.3f\n",
+	    rmsd_thr, sqrt(sum_c2)/M_sqrt, nmodes,
+	    sum_c2/(norm_c2), nmodes/(float)N_modes);
+    fprintf(file_out, "# Scale factor: %.3g (ini) ", sqrt(scale2));
+    // Select modes with individual contribution > threshold
+    int IT_MAX=20, iter;
+    for(iter=0; iter<IT_MAX; iter++){
+      float om_thr=sqrt(scale2)/c_thr;
+      double sum_sigma2_new=0;
+      for(i=0; i<N_modes; i++){
+	sum_sigma2_new+=sigma2[i];
+	if(sigma2[i] && NM->omega[i]>om_thr)break;
+      }
+      float scale2_new=sum_c2/sum_sigma2_new;
+      if(fabs(scale2_new-scale2)<0.00001*scale2){
+	scale2=scale2_new; break;
+      }
+      scale2=scale2_new;
+    }
+    fprintf(file_out, "%.3g (end) iter=%d\n", sqrt(scale2), iter);
+    if(iter==IT_MAX){
+      fprintf(file_out,
+	      "# WARNING, could not set the scale self-consistently\n");
+    }
+    nmodes=0; float om_thr=3*sqrt(scale2)/c_thr;
+    for(i=0; i<N_modes; i++){
+      if(sigma2[i] && NM->omega[i]>om_thr){nmodes=i; break;}
+    }
+    //int nm_thr=10; if(nmodes<nm_thr)nmodes=nm_thr;
+    char tmp[100];
+    sprintf(tmp, "# Number of modes with max. thermal rmsd > %.2g: %d\n",
+	    rmsd_thr, nmodes); 
+    printf("%s", tmp); fprintf(file_out, "%s", tmp);
+  }
+ 
   // Generate new conformation from all torsion angles
   float coord_all[3*natoms1], coord_new[3*Ref.N_ref];
   float RMSD=0, RMSD_target=0;
   Set_bonds_measure(bonds, natoms1, atoms1);
-  Build_up(bonds, natoms1, Diff->Tors, NM->N_axes); //zero
+  int OPTIMIZE_AMPL=1;
+  if(OPTIMIZE_AMPL){
+    struct bond bonds_min[natoms1]; float f_min=1;
+    Copy_bonds(bonds_min, bonds, natoms1);
+    RMSD_target=Optimize_amplitude(bonds_min, &f_min, Diff->Tors, NM->N_axes,
+				   bonds, natoms1, Ref, coord_2);
+    printf("RMSD to target= %.2f\n", RMSD_target);
+    Copy_bonds(bonds, bonds_min, natoms1);
+  }else{
+    Build_up(bonds, natoms1, Diff->Tors, NM->N_axes);
+  }
   Put_coord(coord_all, bonds, natoms1);
   Write_ref_coord(coord_new, Ref.N_ref, coord_all, Ref.atom_num);
   RMSD_target=rmsd_mclachlan_f(coord_2, coord_new, Ref.mass_atom, Ref.N_ref);
   RMSD=rmsd_mclachlan_f(coord_1, coord_new, Ref.mass_atom, Ref.N_ref);
   printf("RMSD to target= %.2f\n", RMSD_target);
   float rmsd1_pdb=RMSD, rmsd2_pdb=RMSD_target;
-  /*// Optimize the amplitude
-  struct bond bonds_min[natoms1]; float f_min=1;
-  Set_bonds_measure(bonds, natoms1, atoms1);
-  Copy_bonds(bonds_min, bonds, natoms1);
-  RMSD_target=Optimize_amplitude(bonds_min, &f_min, Diff->Tors, NM->N_axes,
-				 bonds, natoms1, Ref, coord_2);
-  printf("RMSD to target= %.2f\n", RMSD_target);
-  exit(8);*/
 
   // Generate new conformation from linear approximation
   float RMSD_lin=0, RMSD_lin_target=0, RMSD_lin_full=0;
-  RMSD_lin=RMSD_LIN(&RMSD_lin_target, &RMSD_lin_full, J, Diff->Tors,
-		    Ref, coord_1, coord_2, coord_all);
-
-  //////////////////////////////////////////////////////
-  // Print PDB
-  if(name_pdb && anharmonic==0 && whichmode==0){
-    FILE *file_pdb=fopen(name_pdb, "a");
-    fprintf(file_pdb, "MODEL %d  %s\n", *num_dphi+1, name);
-    fprintf(file_pdb, "REMARK  RMSD from target: %.2f ",rmsd2_pdb);
-    fprintf(file_pdb, " RMSD from starting structure: %.2f\n",rmsd1_pdb);
-    float coord_all_1[3*natoms1], *c=coord_all_1, mass[natoms1]; int i, j;
-    for(i=0; i<natoms1; i++){
-      mass[i]=1;
-      double *r=atoms1[i].r; for(j=0; j<3; j++){*c=*r; c++; r++;}
-    }
-    float rmsd1=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms1);
-    Print_PDB(file_pdb, atoms1, natoms1, coord_all, seq1, *num_dphi, rmsd1);
-    fclose(file_pdb);
+  if(1){
+    RMSD_lin=RMSD_LIN(&RMSD_lin_target, &RMSD_lin_full, J, Diff->Tors,
+		      Ref, coord_1, coord_2, coord_all);
   }
 
-
-  // 02/2020 Select modes with individual contribution > threshold
-  double thr_RMSD_2=0.2*M_sqrt; thr_RMSD_2*=(2*thr_RMSD_2);
-  double D2=0, Delta_E=0;
-  nmodes=0;
-  // Delta_E=sum_a((D*v_a)*omega_a)^2 if(D*v_a)>thr
-  while((nmodes<nm_thr) && (thr_RMSD_2 > 0.00001)){
-    thr_RMSD_2*=0.5;
-    Delta_E=0; D2=0; nmodes=0;
-    for (i=0; i<N_modes; i++){
-      if(sigma2[i]==0)continue;
-      if(c2[i]>thr_RMSD_2){
-	Delta_E+=c2[i]/sigma2[i]; 
-	D2+=c2[i];
-	nmodes++;
-      }
-    }
-  }
-  for(i=0;i<N_modes;i++)c2[i]/=sum_d2; //norm_c2; // Normalize
-
-  /* Random conf change.
-     Average barrier Delta_E0 only for modes with av. > threshold */
-  // Determine threshold in two steps
-
-  double A2=D2/sum_sigma2;
-  double thr_RMSD_0=thr_RMSD_2/A2; int nm0=0;
-  while(nm0 < nm_thr){
-    sum_sigma2=0; nm0=0;
-    for (i=0; i<N_modes; i++){
-      if(sigma2[i]>thr_RMSD_0){sum_sigma2+=sigma2[i]; nm0++;}
-    }
-    thr_RMSD_0*=0.5; if(thr_RMSD_0<0.001)break;
-  }
-  A2=D2/sum_sigma2;
-  thr_RMSD_0=thr_RMSD_2/A2;
-  sum_sigma2=0; nm0=0;
-  for (i=0; i<N_modes; i++){
-    if(sigma2[i]>thr_RMSD_0){
-      nm0++;
-      sum_sigma2+=sigma2[i];
-    }
-  }
-  //Delta_E0*=(D2/sum_sigma2);
-
-  unsigned long iran=randomgenerator();
-  if(ini_ran==0){
-    InitRandom((RANDOMTYPE)iran); ini_ran=1;
-  }
-  double Delta_E0_ave=0;
-  float pval=0; int nran=200;
-  float Big_z=3, thr_RMSD_z=thr_RMSD_0/(Big_z*Big_z);
-  for(int j=0; j<nran; j++){
-    float DE=0, sum_sigma2=0;
-    for (i=0; i<N_modes; i++){
-      if(sigma2[i]>thr_RMSD_z){
-	float z2=Norm_var_2(), zs=z2*sigma2[i];
-	if(zs>thr_RMSD_0){
-	  DE+=z2; sum_sigma2+=zs;
-	}
-      }
-    }
-    if(sum_sigma2)DE*=(D2/sum_sigma2);
-    Delta_E0_ave+=DE;
-    if(DE<Delta_E)pval++;
-  }
-  pval/=nran; Delta_E0_ave/=nran;
-
-  // Equivalent threshold for normal modes
-  //double s2_thr=sum_sigma2*sum_c2/sum_d2;
-
-  // Rank normal modes on frequency
-  /*int sort_w[N_modes], sorted[N_modes];
-  for(i=0;i<N_modes; i++){sorted[i]=0; sort_w[i]=-1;}
-  for(k=0; k<N_modes; k++){
-    int ik=-1; float smax=-1; 
-    for (i=0;i<N_modes; i++){
-      if((sorted[i]==0)&&(sigma2[i]>=smax)&&(NM->select[i])){
-	smax=sigma2[i]; ik=i;
-      }
-    }
-    if(ik<0)break;
-    sort_w[k]=ik; sorted[ik]=1;
-    } */
- 
-  // Number of modes contributing mode than sum_thr to sum_c2 and sum_sigma2
-  /* float sum_thr=0.85, sum_thr_w2=sum_thr*sum_sigma2;
-  int nmodes_c2=0, nmodes_w2=0;
-  double tmp_s2=0, tmp_c2=0;
-  for (k=0; k<N_modes; k++){
-    i=sort_w[k]; if(i<0)break;
-    if(tmp_c2<=sum_thr){tmp_c2+=c2[i]; nmodes_c2++;}
-    if(tmp_s2<=sum_thr_w2){tmp_s2+=sigma2[i]; nmodes_w2++;}
-  }
-  printf("number of modes such that sum< %.2f total: %d (c2), %d (w2) %.3f\n",
-	 sum_thr, nmodes_c2, nmodes_w2, nmodes_w2/(float)nmodes_c2);
-
-  int selmodes=0; sum_sigma2=0;
-  for (k=0; k<N_modes; k++){
-    if(sum_sigma2>s2_thr)break;
-    i=sort_w[k]; if(i<0)break;
-    if(sigma2[i]>0){
-      sum_sigma2+=sigma2[i]; selmodes++;
-    }
-  }
-  printf("selmode= %d sum_sigma2= %.3g sum_c2= %.2g s2_thr= %.3g\n",
-	 selmodes, sum_sigma2, sum_c2/sum_d2, s2_thr);
-  */
-
-  // Store angles and projections
-  float *Dphi=malloc(NM->N_axes*sizeof(float));
-  for(int a=0; a<NM->N_axes; a++)Dphi[a]=Diff->Tors[a];
-  diff_angles[*num_dphi]=Dphi;
-  
-  Dphi=malloc(NM->N_axes*sizeof(float));
-  for(int a=0; a<NM->N_axes; a++)Dphi[a]=Diff->MW_Tors[a];
-  MW_diff_angles[*num_dphi]=Dphi;
-  
-  float *cc=malloc(NM->N*sizeof(float));
-  for (i=0;i<N_modes;i++)cc[i]=c2[i];
-  c2_alpha[*num_dphi]=cc;
-
-  (*num_dphi)++;
-
-  double norm_c2=
-    Scalar_product_weighted(Diff->Cart,Diff->Cart,Ref.mass_coord,Ref.N_cart);
-  float M_tot=M_sqrt*M_sqrt, rmsd=sqrt(norm_c2/M_tot);
 
   // Conformation change
   int nn=0, n_outlier=0; float THR=0.5;
@@ -733,7 +669,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
     fprintf(file_out, "Angular RMSD          %.3f\n", Diff->RMSD_Tors);
     fprintf(file_out, "Num(dtheta>%.1f)       %d\n", THR, nn);
 
-    float Coll=Collectivity_norm2(Diff->Cart, Ref.N_cart)/Ref.N_cart;
+    float Coll=Collectivity_norm2(Diff->Cart, Ref.N_Cart)/Ref.N_Cart;
     fprintf(file_out, "Coll.(cart)           %.3f\n", Coll);
     Coll=Collectivity_norm2(Diff->MW_Tors, NM->N_axes)/NM->N_axes;
     fprintf(file_out, "Coll.(MWtors)         %.3f\n", Coll);
@@ -744,7 +680,26 @@ void Print_diff(int *num_dphi, char **name_dphi,
     fprintf(file_out, "#\n");
   }
 
+  //////////////////////////////////////////////////////
+  // Print PDB
+  if(name_pdb && anharmonic==0 && whichmode==0){
+    FILE *file_pdb=fopen(name_pdb, "a");
+    fprintf(file_pdb, "MODEL %d  %s\n", *num_dphi+1, name);
+    fprintf(file_pdb, "REMARK  RMSD from target: %.2f ",rmsd2_pdb);
+    fprintf(file_pdb, "RMSD from starting structure: %.2f\n",rmsd1_pdb);
+    float coord_all_1[3*natoms1], *c=coord_all_1, mass[natoms1]; int i, j;
+    for(i=0; i<natoms1; i++){
+      mass[i]=1;
+      double *r=atoms1[i].r; for(j=0; j<3; j++){*c=*r; c++; r++;}
+    }
+    float rmsd1=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms1);
+    Print_PDB(file_pdb, atoms1, natoms1, coord_all, seq1, *num_dphi, rmsd1);
+    fclose(file_pdb);
+  }
+
   // Correlation angular fluctuations - conformation change
+  Diff->RMSD_Tors=RMS(Diff->Tors, naxes, outlier_tors);
+  printf("RMSD(Tors)= %.3f (without outliers)\n", Diff->RMSD_Tors);
   float r, slope, offset;
   float dt[NM->N_axes], tors_fluct[NM->N_axes]; int ma=0;
   for(a=0; a<NM->N_axes; a++){
@@ -756,22 +711,114 @@ void Print_diff(int *num_dphi, char **name_dphi,
   r=Corr_coeff(tors_fluct, dt, ma, &slope, &offset);
   fprintf(file_out, "r(therm,change)_Tors  %.3f\n", r);
 
-  // Projection on normal modes and frequency
+  // Prepare projections and compute RMSD
+
+
+  /* Random conf changes with regularization */
+  unsigned long iran=randomgenerator();
+  if(ini_ran==0){
+    InitRandom((RANDOMTYPE)iran); ini_ran=1;
+  }
+  double Delta_E0_ave=0, m_ave=0;
+  float pval=0; int nran=200;
+  float c2_thr=c_thr*c_thr/scale2;
+  for(int j=0; j<nran; j++){
+    double DE=0, sum_c2_ran=0;
+    for (i=0; i<nmodes; i++){
+      if(sigma2[i]==0)continue;
+      float z2=Norm_var_2();
+      float c2i=z2*sigma2[i];
+      if(REG2){
+	float reg=1+Lambda/sigma2[i]; z2/=(reg*reg);
+      }else{
+	if(c2i<c2_thr)continue;
+      }
+      m_ave++;
+      DE+=z2;
+      sum_c2_ran+=c2i;
+    } // end modes
+    if(sum_c2_ran)DE*=(sum_c2/sum_c2_ran);
+    Delta_E0_ave+=DE;
+    if(DE<Delta_E)pval++;
+  }
+  pval/=nran; Delta_E0_ave/=nran; m_ave/=nran;
+
+ // Projection on normal modes and frequency
   /*fprintf(file_out, "Ratio_rel_modes_%.2f  %.3g  %d %d\n",
     sum_thr, nmodes_w2/(float)nmodes_c2, nmodes_w2, nmodes_c2);*/
-  fprintf(file_out, "Delta_E0_modes        %d\n", nm0); //Delta_E
   //(sum_c2*Delta_E0)/(sum_sigma2*Delta_E));
-  fprintf(file_out, "Delta_E0_ave/Delta_E  %.3g\n",
+  fprintf(file_out, "Null_model_rmsd       %.3g\n", sqrt(sum_c2)/M_sqrt);
+  fprintf(file_out, "Delta_E_ran/Delta_E   %.3g\n",
 	  Delta_E0_ave/Delta_E); 
-  fprintf(file_out, "P(Delta_E0<Delta_E)   %.3g\n",pval);
+  fprintf(file_out, "P(Delta_E_ran<Delta_E) %.3g\n",pval);
+  //fprintf(file_out, "Selected_modes        %d\n", nmodes); //Delta_E
+  fprintf(file_out, "Mean_num. modes       %.1f\n", m_ave);
   Delta_E/=(2.0*M_sqrt*M_sqrt);
   fprintf(file_out, "Delta_E(kBT)          %.3g\n", Delta_E);
-  fprintf(file_out, "Delta_E(kBT)/Dr^2     %.3g\n", Delta_E/(rmsd*rmsd));
+  fprintf(file_out, "Delta_E(kBT)/Dr^2     %.3g\n",
+	  Delta_E/(Diff->RMSD*Diff->RMSD));
+
+  // Equivalent threshold for normal modes
+  //double s2_thr=sum_sigma2*sum_c2/sum_c2;
+
+  // Rank normal modes on frequency
+  /*int sort_w[N_modes], sorted[N_modes];
+  for(i=0;i<N_modes; i++){sorted[i]=0; sort_w[i]=-1;}
+  for(k=0; k<N_modes; k++){
+    int ik=-1; float smax=-1; 
+    for (i=0;i<N_modes; i++){
+      if((sorted[i]==0)&&(sigma2[i]>=smax)&&(NM->select[i])){
+	smax=sigma2[i]; ik=i;
+      }
+    }
+    if(ik<0)break;
+    sort_w[k]=ik; sorted[ik]=1;
+    } */
+ 
+  // Number of modes contributing more than sum_thr to sum_c2 and sum_sigma2
+  /* float sum_thr=0.85, sum_thr_w2=sum_thr*sum_sigma2;
+  int nmodes_c2=0, nmodes_w2=0;
+  double tmp_s2=0, tmp_c2=0;
+  for (k=0; k<N_modes; k++){
+    i=sort_w[k]; if(i<0)break;
+    if(tmp_c2<=sum_thr){tmp_c2+=c2[i]; nmodes_c2++;}
+    if(tmp_s2<=sum_thr_w2){tmp_s2+=sigma2[i]; nmodes_w2++;}
+  }
+  printf("number of modes such that sum< %.2f total: %d (c2), %d (w2) %.3f\n",
+	 sum_thr, nmodes_c2, nmodes_w2, nmodes_w2/(float)nmodes_c2);
+
+  int selmodes=0; sum_sigma2=0;
+  for (k=0; k<N_modes; k++){
+    if(sum_sigma2>s2_thr)break;
+    i=sort_w[k]; if(i<0)break;
+    if(sigma2[i]>0){
+      sum_sigma2+=sigma2[i]; selmodes++;
+    }
+  }
+  printf("selmode= %d sum_sigma2= %.3g sum_c2= %.2g s2_thr= %.3g\n",
+	 selmodes, sum_sigma2, sum_c2/sum_d2, s2_thr);
+  */
+
+
+  // Store angles and projections
+  float *Dphi=malloc(NM->N_axes*sizeof(float));
+  for(int a=0; a<NM->N_axes; a++)Dphi[a]=Diff->Tors[a];
+  diff_angles[*num_dphi]=Dphi;
+  
+  Dphi=malloc(NM->N_axes*sizeof(float));
+  for(int a=0; a<NM->N_axes; a++)Dphi[a]=Diff->MW_Tors[a];
+  MW_diff_angles[*num_dphi]=Dphi;
+  
+  float *cc=malloc(NM->N*sizeof(float));
+  for (i=0;i<N_modes;i++)cc[i]=c2[i];
+  c2_alpha[*num_dphi]=cc;
+
+  (*num_dphi)++;
 
   //rho1
   float x[N_modes], y[N_modes];  int imax=-1;
   float cmax=-1; k=0; 
-  for(i=0; i<N_modes; i++){
+  for(i=0; i<nmodes; i++){
     if(NM->select[i]==0)continue;
     //if(NM->Cart_coll[i] < Coll_thr_cc)continue;
     x[k]=sigma2[i]; y[k]=c2[i]; k++;
@@ -780,15 +827,17 @@ void Print_diff(int *num_dphi, char **name_dphi,
   r= Corr_coeff(x, y, k, &slope, &offset);
   //*Confchange_mode=imax;
 
+  //if(REG2)
+  //fprintf(file_out, "# Warning, regularization violates the null model\n");
   fprintf(file_out, "r[c^2,1/w^2]          %.3f\n", r);
-  fprintf(file_out, "slope                 %.2f\n", slope);
-  fprintf(file_out, "offset                %.4f\n", offset);
+  fprintf(file_out, "slope                 %.2g\n", slope);
+  fprintf(file_out, "offset                %.2g\n", offset);
   float Coll=Collectivity_norm1(y, k);
   //Coll=Collectivity_norm1(c2, NM->N_relevant);
   fprintf(file_out, "Recp.Coll(cc)         %.1f\n", Coll);
 
   /*if(nstruct==0){
-    int na=Ref.N_cart/3;
+    int na=Ref.N_Cart/3;
     fprintf(file_out, "Recp.Coll.(cc)/Natm   %.3f\n", Coll/na);
     fprintf(file_out, "R.Coll.(cc)Renyi/Natm %.3f\n",
       Collectivity_Renyi_norm1(c2,N_modes)/na);
@@ -823,7 +872,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
   // rho
   k=0; cmax=-1;
   //~ float min_pred=-2*mu/slope;
-  for(i=0; i<N_modes; i++){
+  for(i=0; i<nmodes; i++){
     if(NM->select[i]==0)continue;
     //if(NM->Cart_coll[i] < Coll_thr_cc)continue;
     x[k]=sigma2[i];
@@ -844,7 +893,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
 
   // Correlation conformation change and anharmonicity
   if(NM->Anharmonicity[0]){
-    float P2[N_modes], norm=norm_c2/sum_d2;
+    float P2[N_modes], norm=norm_c2/sum_c2;
     for(i=0; i<N_modes; i++){
       if(NM->select[i]){P2[i]=c2[i]*norm;}
       else{P2[i]=0;}
@@ -879,7 +928,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
   }
   //Corr_coeff(x, y, k, &slope, &offset);
   //fprintf(file_out, "r_ll(therm,force)     %.3f\n", r);
-  //fprintf(file_out, "expo(therm,force)     %.2f\n", slope);
+  //fprintf(file_out, "expo(therm,force)     %.2g\n", slope);
 
   for(i=0; i<NM->N; i++)F_coeff[i]/=sum;
   float k_Force_mode=Collectivity_norm1(F_coeff, N_modes);
@@ -899,8 +948,8 @@ void Print_force_confchange(struct Normal_Mode NM, struct Tors Diff,
 {
   // Squared conformation changes
   struct Tors Diff2;   int i;
-  Allocate_tors(&Diff2, NM.N_axes, NM.N_cart, NM.N);
-  for(i=0; i<NM.N_cart;  i++){
+  Allocate_tors(&Diff2, NM.N_axes, NM.N_Cart, NM.N);
+  for(i=0; i<NM.N_Cart;  i++){
     Diff2.Cart[i]=Diff.Cart[i]*Diff.Cart[i];
   }
   for(i=0; i<NM.N_axes;  i++){
@@ -967,12 +1016,15 @@ void Print_modes_confchange(char *name2, char *nameout2,
   }
 
   // Print lines
+  fprintf(file_out, "# Frequency reported in internal units: %.3f ps^(-1),"
+	  " kT/h/ is %.3g internal units (om-2)= %.3g\n",
+	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/0.1482);
   fprintf(file_out,"# mode pc_confch cumul  ");
   fprintf(file_out,"om-2(harm) ");
   if(anharmonic)fprintf(file_out, "om-2(corr) om-2(anha) ");
-  fprintf(file_out,"   RMSD  C_cart");
-  if(NM.MW_Tors_coll)fprintf(file_out, "  C_MW");
-  if(NM.Tors_coll)fprintf(file_out, "  C_tors");
+  fprintf(file_out,"   RMSD  Coll_cart");
+  if(NM.MW_Tors_coll)fprintf(file_out, "  Coll_MW");
+  if(NM.Tors_coll)fprintf(file_out, "  Coll_tors");
 
   //fprintf(file_out, "# mode\tContr_to_confchange\tCumulative");
   //if(anharmonic)fprintf(file_out, "\tOmega^(-2)_anharm");
@@ -985,6 +1037,7 @@ void Print_modes_confchange(char *name2, char *nameout2,
   }
   fprintf(file_out, "\n");
 
+  float N_sqrt=sqrt(NM.N_Cart/3);
   double sum_coeff_C=0; //sum_B=0;
   for(k=0; k<NM.N; k++){
     int ik=NM.sort[k]; if(ik<0)continue;
@@ -996,8 +1049,8 @@ void Print_modes_confchange(char *name2, char *nameout2,
     fprintf(file_out, "%7.4g  ",NM.sigma2[ik]);
     if(anharmonic)fprintf(file_out,"%7.4g  %7.4g  ",
 			  xkappa*NM.sigma2_anhar[ik],NM.sigma2_anhar[ik]);
-    fprintf(file_out, "  %8.3g", 1./(M_sqrt*sqrt(NM.omega2[ik])));
-    fprintf(file_out, "   %5.3f", NM.Cart_coll[ik]);
+    fprintf(file_out, "  %8.3g", 1./(N_sqrt*NM.omega[ik]));
+    fprintf(file_out, "  %5.3f", NM.Cart_coll[ik]);
     fprintf(file_out, "  %5.3f", NM.MW_Tors_coll[ik]);
     fprintf(file_out, "  %5.3f", NM.Tors_coll[ik]);
 	    
@@ -1033,7 +1086,7 @@ float Test_Renyi(float *wminus2, float *P, int N, char *name, FILE *file1)
      Returns the value of q that yields best correlation */
   int Newfile=0, i;
   float *y=malloc(N*sizeof(float));
-  float q, q1, r, slope, offset, qmax=0, rmax=0;
+  float q, q1=0, r, slope, offset, qmax=0, rmax=0;
   FILE *file2; char filename[80];
   if(Newfile){
     sprintf(filename, "Renyi_%s.dat", name);
@@ -1045,18 +1098,20 @@ float Test_Renyi(float *wminus2, float *P, int N, char *name, FILE *file1)
   }
 
   float wmin=1000, mu;
-  for(i=0; i<N; i++)if(wminus2[i]<wmin)wmin=wminus2[i]; wmin-=0.0001;
+  for(i=0; i<N; i++)if(wminus2[i]<wmin)wmin=wminus2[i];
+  wmin-=0.0001;
   for(q=1; q<=3.5; q+=0.25){
+    double d_KL=0, q2=0, Z=0, lnp;
     if(q==1){for(i=0; i<N; i++)y[i]=log(P[i]);}  // q=1: Shannon
-    else{q1=q-1; for(i=0; i<N; i++)y[i]=pow(P[i], q1);}
+    else{for(i=0; i<N; i++)y[i]=pow(P[i], q1);}
     r= Corr_coeff(wminus2, y, N, &slope, &offset);
-    double d_KL=0, q2=1/q1, Z=0, lnp;
     if(q==1){
       for(i=0; i<N; i++){
 	d_KL+=P[i]*(y[i]-slope*wminus2[i]);
 	Z+=exp(slope*wminus2[i]);
       }
     }else{
+      q1=q-1; q2=1/q1; 
       if(offset<0){mu=-wmin;}else{mu=offset/slope;}
       for(i=0; i<N; i++){
 	lnp=q2*log(wminus2[i]+mu); Z+=exp(lnp);
@@ -1100,12 +1155,14 @@ float Test_Null(float *wminus2, float *P, int N, char *name, FILE *file1)
   //float q_rho=0;
   double P1=0, P2=0, dP=0;
   for(i=0; i<N; i++){P1+=P[i]; P2+=P[i]*P[i]; dP+=P[i]*log(P[i]);}
-  for(i=0; i<N; i++)P[i]/=P1; P2=P2/(P1*P1)-1./N; dP=dP/P1-log(P1);
+  for(i=0; i<N; i++)P[i]/=P1;
+  P2=P2/(P1*P1)-1./N; dP=dP/P1-log(P1);
   //printf("P2= %.3f -S[P]=%.3f N=%d\n", P2, dP, N);
   for(q=0.5; q<=8; q+=0.25){
     double  q1=q/2., x1=0, d_KL=0, d2=0, d;
     for(i=0; i<N; i++){x[i]=pow(wminus2[i], q1); x1+=x[i];}
-    for(i=0; i<N; i++)d_KL+=P[i]*log(x[i]); d_KL=dP-(d_KL-log(x1));
+    for(i=0; i<N; i++)d_KL+=P[i]*log(x[i]);
+    d_KL=dP-(d_KL-log(x1));
     if(d_KL < dmin){dmin=d_KL; q_dmin=q;}
     for(i=0; i<N; i++){d=P[i]-x[i]/x1; d2+=d*d;} d2/=P2;
     for(i=0; i<N; i++)x[i]=P[i]/x[i];
@@ -1223,13 +1280,13 @@ int Mode_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
   FILE *file_pdb=fopen(out, "w");
   char what[100];
   sprintf(what, "Torsional conformations, norm. modes ranked by"); 
-  if(type){sprintf(what, "%s overlap", what);}
-  else{sprintf(what, "%s frequency", what);}
+  if(type){strcat(what, " overlap");}
+  else{strcat(what, " frequency");}
   fprintf(file_out, "# %s\n", what);
   fprintf(file_out,"#1=rmsd_min 2=rmsd_tar 3=mode 4=c_alpha\n");
   fprintf(file_out, "%.3g\t%.3g\t0\t0\n",rmsd_ini,rmsd_ini);
 
-  int naxes=NM->N_axes, ncoord=NM->N_cart;
+  int naxes=NM->N_axes, ncoord=NM->N_Cart;
   float d_phi_opt[naxes], d_phi[naxes], d_phi_best[naxes];
   float coord_new[ncoord], coord_step[ncoord], coord_all[3*natoms];
   float D_coord[ncoord];   
@@ -1385,7 +1442,7 @@ int Mode_confchange_old(struct Tors *Diff, struct Normal_Mode *NM,
   FILE *file_pdb=fopen(out, "w");
 
   float rmsd_ini=rmsd_mclachlan_f(coord_1,coord_2,Ref.mass_atom,Ref.N_ref);
-  int naxes=NM->N_axes, ncoord=NM->N_cart;
+  int naxes=NM->N_axes, ncoord=NM->N_Cart;
   float d_phi_opt[naxes], d_phi[naxes];
   float coord_new[ncoord], coord_step[ncoord], coord_all[3*natoms];
   float D_coord[ncoord];   int done[NM->N];
@@ -1401,9 +1458,9 @@ int Mode_confchange_old(struct Tors *Diff, struct Normal_Mode *NM,
       char what[100];
       if(lin){sprintf(what, "Linear ");}
       else{sprintf(what, "Torsional ");}
-      sprintf(what, "%s conformations, norm. modes ranked by", what); 
-      if(type){sprintf(what, "%s overlap", what);}
-      else{sprintf(what, "%s frequency", what);}
+      strcat(what, " conformations, norm. modes ranked by"); 
+      if(type){strcat(what, " overlap");}
+      else{strcat(what, " frequency");}
       fprintf(file_out, "# %s\n", what);
       fprintf(file_out,"#1=n.modes 2=rmsd_min 3=rmsd 4=mode 5=c_alpha\n");
       fprintf(file_out, "0\t%.3g\t%.3g\t0\t0\n",rmsd_ini,rmsd_ini);
@@ -1465,7 +1522,8 @@ int Mode_confchange_old(struct Tors *Diff, struct Normal_Mode *NM,
 	    if(random){
 	      if(iter>imode)break;
 	      int iran=imode*RandomFloating();
-	      if(iran>imode)iran=imode; kj=jmode[iran];
+	      if(iran>imode)iran=imode;
+	      kj=jmode[iran];
 	      cc=gasdev(&idum)*sigma[kj]*rfact;
 	    }else{ // Minimization
 	      kj=-1; cc=0;
@@ -1561,7 +1619,7 @@ int Lasso_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
   float c[NM->N]; double c2_sum=0, sum_c1=0; int i;
   for (i=0; i<NM->N; i++){
     c[i]=Scalar_product_weighted(Diff->Cart, NM->Cart[i],
-				 Ref.mass_coord, Ref.N_cart);
+				 Ref.mass_coord, Ref.N_Cart);
     c2_sum+=c[i]*c[i]; sum_c1+=fabs(c[i]);
   }
   sum_c1/=NM->N; // average projection

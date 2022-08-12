@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "externals.h"
 
 static void Write_contact_list(short **cont_i, short **cont_j,
 			       struct interaction *Int_list, int *N_int);
@@ -24,8 +25,9 @@ float Contact_overlap(struct interaction *Int_list1, int N_int1,
   Write_contact_list(&cont1_i, &cont1_j, Int_list1, &Nc1);
   short *cont2_i, *cont2_j; int Nc2=N_int2;
   Write_contact_list(&cont2_i, &cont2_j, Int_list2, &Nc2);
-  printf("Initial number of contacts: 1 %d 2 %d\n", N_int1, N_int2);
-  printf("After identifying residues: 1 %d 2 %d\n", Nc1, Nc2);
+  printf("Computing contact overlap\n");
+  printf("Initial number of contacts: PDB1 %d PDB2 %d\n", N_int1, N_int2);
+  printf("After identifying residues: PDB1 %d PDB2 %d\n", Nc1, Nc2);
   int k;
   for(k=0; k<Nc1; k++){
     cont1_i[k]=alires[cont1_i[k]];
@@ -43,7 +45,9 @@ float Contact_overlap(struct interaction *Int_list1, int N_int1,
   }
   free(cont1_i);free(cont1_j); //modyves: was never freed
   free(cont2_i);free(cont2_j); //modyves: was never freed
-  return((float)overlap/sqrt((float)(Nc1*Nc2)));
+  float q=(float)overlap/sqrt((float)(Nc1*Nc2));
+  printf("Contact overlap: %.3f\n", q);
+  return(q);
 }
 
 float Contact_energy(struct interaction *Int_list, int N_int,

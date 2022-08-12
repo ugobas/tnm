@@ -58,6 +58,7 @@ int Read_seqres(char **seqres, int *N_seqres, int NCHAIN,
 void Align_seqres(int *ali_seqres, char *seqres, int N_seqres,
 		  char *seq, int nres)
 {
+  // ali_seqres[iseqres]=resstruct
   int IDMIN=7;
   int i=0, k=0; char *s1=seqres, *s2=seq;
   for(i=0; i<N_seqres; i++){
@@ -84,7 +85,8 @@ void Align_seqres(int *ali_seqres, char *seqres, int N_seqres,
     printf("%d aligned residues over %d disordered: %d\n",
 	   k, N_seqres, N_seqres-k);
     printf("SEQRES:  ");
-    for(i=0; i<N_seqres; i++)printf("%c", seqres[i]); printf("\n");
+    for(i=0; i<N_seqres; i++)printf("%c", seqres[i]);
+    printf("\n");
     printf("ATOMRES: ");
     for(i=0; i<N_seqres; i++){
       if(ali_seqres[i]<0){printf("-");}

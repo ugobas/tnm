@@ -496,7 +496,7 @@ struct bond *Find_previous(struct bond *bond, int n, int N_atoms,
   struct bond *prev=NULL, *pname=NULL;
   double dmin=1000000, dname=100000; int i;
   for(i=n; i>0; i--){
-    if(previous->atom->res<res)break;
+    if(previous->atom->res<(res-1))break;
     if((bond->atom->main)&&(previous->atom->main==0))goto next;
     if((((ichar>=0)&&(previous->atom->name[ichar]==name_p[0]))||
 	(strncmp(previous->atom->name, name_p, 3)==0)||
@@ -556,6 +556,11 @@ struct bond *Find_previous(struct bond *bond, int n, int N_atoms,
 
   if(prev==NULL){ 
     printf("ERROR, no previous atom of %s found\n", bond->atom->name);
+    printf("n= %d i= %d ", n, i);
+    printf("d(atom: %s%d%c previous: %s %d%c)= %.1f\n",
+	 bond->atom->name, bond->atom->res, bond->atom->aa,
+	 previous->atom->name, previous->atom->res, previous->atom->aa,
+	   sqrt(dmin));
     exit(8);
   }
   printf("d(atom: %s%d%c previous: %s%d%c)= %.1f\n",

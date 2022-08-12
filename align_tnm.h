@@ -1,4 +1,7 @@
-int MIN_ALI_LEN;  // Chains are aligned if L>MIN_ALI_LEN, if not peptides
+#ifndef ALIGN_TNM
+#define ALIGN_TNM
+
+extern int MIN_ALI_LEN; // Chains are aligned if L>MIN_ALI_LEN, if not peptides
 
 struct Ali_score{
   float seq_id, aligned, psi, mamm_score;
@@ -45,4 +48,6 @@ void Print_modes_confchange(char *name2, char *confchange,
 			    int ANM, float M_sqrt, float rmsd, int anharmonic,
 			    float xkappa);
 void Allocate_Normal_modes(struct Normal_Mode *NM,
-			   int N_modes, int N_axes, int N_cart);
+			   int N_modes, int N_axes, int N_Cart);
+
+#endif

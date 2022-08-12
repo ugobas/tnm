@@ -1,12 +1,15 @@
+#ifndef INI_INTERACTIONS 
+#define INI_INTERACTIONS 
+
 // Parameters for interactions
 
-int S_TYPE;        // Type of shadow interaction
-int ONEINT;        // Only one interaction per atom vs. residue
-float S_THR;       // Screening parameter
-int HNM;           // Calpha interactions with Hissen parameters
-int NOCOV;         // Covalent neighbors do not interact
-char REF[20];      // Reference atoms
-int N_RESRES;      // Number of interactions retained for each residue pair
+extern int S_TYPE;        // Type of shadow interaction
+extern int ONEINT;        // Only one interaction per atom vs. residue
+extern float S_THR;       // Screening parameter
+extern int HNM;           // Calpha interactions with Hissen parameters
+extern int NOCOV;         // Covalent neighbors do not interact
+extern char REF[20];      // Reference atoms
+extern int N_RESRES;      // Number of interactions retained for each res pair
 
 void Assign_interactions_SB(struct interaction *Int_list, int N_int,
 			    struct interaction **Int_KB, int *aa_seq);
@@ -49,3 +52,5 @@ void Scale_interactions(char *INT_TYPE, atom *atoms, int natoms, int nres);
 struct interaction *Check_pair(int *new1, int res1, int *res2, int nres,
 			       struct interaction **ini,
 			       struct interaction *end);
+
+#endif

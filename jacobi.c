@@ -84,7 +84,8 @@ void jacobi(double **a, int n, double d[], double **v, int *nrot)
   }
   int NSHOW=30; if(NSHOW>n)NSHOW=n;
   for(i=1; i<=NSHOW; i++){
-    for(j=1; j<=NSHOW; j++)printf("%.5f ", a[i][j]); printf("\n");
+    for(j=1; j<=NSHOW; j++)printf("%.5f ", a[i][j]);
+    printf("\n");
   }
   nrerror("Too many iterations in routine jacobi");
 }

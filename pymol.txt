@@ -1,0 +1,4 @@
+setenv FREEMOL /opt/freemol
+xdg-open 4akeA-1ankA_movie.mpg
+
+
