@@ -1,9 +1,10 @@
 #ifndef ___TNM_H___12345
 #define ___TNM_H___12345
 
-int N_PDB_print;
-int PRINT_PDB_ANHARM;
-
+extern int N_PDB_print;
+extern int PRINT_PDB_ANHARM;
+extern float KAPPA_DEF;
+extern float TEMP_DEF;
 
 /*struct Molecule{
   int N_atoms, N_axes, N_res;
@@ -25,17 +26,18 @@ struct Dof{
   };*/
 
 struct Reference{
-  int N_ref, N_cart;
-  float mass_tot;
+  int N_ref, N_Cart;
+  float mass_sum;
   float *mass_atom;
   float *mass_coord;
+  float *mass_sqrt;
   //float *inv_sq_mass;
   int *atom_num;
 };
 
 struct Normal_Mode{
   int N, N_kin;
-  int N_axes, N_cart;
+  int N_axes, N_Cart;
   int N_relevant;
   float *omega;
   float *omega2;
@@ -64,7 +66,7 @@ struct Normal_Mode{
 };
 
 struct Jacobian{
-  int N_axes, N_cart, N_kin;
+  int N_axes, N_Cart, N_kin;
   float **Jacobian_ar;
   float **Jtilde_ar;
   double **T;
@@ -77,7 +79,7 @@ struct Jacobian{
 };
 
 struct Tors{
-  int N_axes, N_cart;
+  int N_axes, N_Cart;
   float *Cart;
   float *MW_Tors;
   float *Tors;
@@ -87,6 +89,7 @@ struct Tors{
   float RMSD;
   float RMSD_W;
   float RMSD_Tors;
+  float M;
 };
 
 struct Para_simul{
@@ -113,7 +116,7 @@ struct Para_confchange{
 };
 
 
-void Allocate_tors(struct Tors *X, int N_axes, int N_cart, int N_modes);
+void Allocate_tors(struct Tors *X, int N_axes, int N_Cart, int N_modes);
 void Empty_tors(struct Tors X);
 
 

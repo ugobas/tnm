@@ -158,7 +158,8 @@ float Corr_coeff(float *xx, float *yy, int N,
   }
   x2=N*x2-x1*x1; y2=N*y2-y1*y1; xy=N*xy-x1*y1;
   if((x2==0.0)||(y2==0.0))return(0.0);
-  if(slope)*slope=xy/x2; if(offset)*offset=(y1-(*slope)*x1)/N;
+  if(slope)*slope=xy/x2;
+  if(offset)*offset=(y1-(*slope)*x1)/N;
   //printf("N= %d xy=%.2g x2=%.2g y2=%.2g\n", N, xy, x2, y2);
   return(xy/sqrt(x2*y2));
 }
@@ -205,13 +206,17 @@ float Collectivity_norm2(float *v, int N){
   for(i=0; i<N; i++){
     w=v[i]*v[i]; if(w>0){sum+=w; Entropy-=w*log(w);}
   }
-  Entropy=Entropy/sum;
-  if(sum>0)Entropy+=log(sum);
+  if(sum>0){
+    Entropy=Entropy/sum;
+    Entropy+=log(sum);
+  }
   kappa=exp(Entropy);
   if(isnan(kappa)){
+    printf("Warning in Collectivity_norm2 ");
     printf("Entropy: %.2g sum: %.2g kappa: %.2g\n", Entropy, sum, kappa);
     printf("v: ");
-    for(i=0; i<100; i++)printf(" %.2g", v[i]); printf(" ...\n");
+    for(i=0; i<30; i++)printf(" %.2g", v[i]);
+    printf(" ...\n");
     //exit(8);
   }
   return(kappa);
