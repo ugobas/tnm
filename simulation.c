@@ -32,13 +32,13 @@ float RMSD_TOL=0.20; // Tolerance RMSD for confchange
 
 float Energy_clashes(float *r, int N);
 int Metropolis(float Ene_tmp, float Ene, float T);
-void Extract_dphi(float *d_phi, float **Tors_mode, float *sigma,
+void Extract_dphi(double *d_phi, float **Tors_mode, float *sigma,
 		  int N_modes, int N_axes, float factor, long *idum);
 void Extract_dx(float *dx, float **Cart_mode, float *sigma,
 		  int N_modes, int N_Cart, float factor, long *idum);
 unsigned long randomgenerator(void);
 void Copy_atoms_bonds(atom *atoms, struct bond *bonds, int natoms);
-int Decide_direction(struct bond *bonds, float *d_phi, float *atom_str,
+int Decide_direction(struct bond *bonds, double *d_phi, float *atom_str,
 		     atom *atoms, int naxes, int natoms);
 void Print_PDB(FILE *file_out, atom *atoms, int natoms, float *atom_str3,
 	       struct residue *seq, int k, float rmsd);
@@ -49,7 +49,7 @@ void Write_ref_coord_atom(float *coord, int N_ref, atom *atoms,
 			  int *atom_num);
 void Write_ref_coord(float *coord_ref, int N_ref, float *coord_all,
 		     int *atom_num);
-int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
+int Make_conformations(char type, int N_frames, double *d_phi, float *d_Cart,
 		       float factor, float coeff, float rmsd0,
 		       float *coord_all_f, float *coord_opt_f,
 		       float *coord_ref, float *coord_ref2,
@@ -73,7 +73,7 @@ void Torsional_confchange_1angle_old(struct bond *bonds, int natoms1,
 				     float *coord_ref_1, float *coord_ref_2,
 				     int N_coord, atom *atoms1,FILE *file_rmsd,
 				     struct Para_simul Para_simul);
-int Torsional_confchange_1angle(float *diff_tors, int naxes, float angle,
+int Torsional_confchange_1angle(double *diff_tors, int naxes, float angle,
 				struct bond *bonds, int natoms1,
 				struct ali_atoms ali_a,
 				float *coord_ref_1, float *coord_ref_2,
@@ -83,9 +83,8 @@ static void Ave_se(double *sum1, double *sum2, int n);
 
 
 float Cos_sin(float *s, float c);
-extern int Periodic_angles(float *dphi, struct axe *axe, int n);
 extern void Compare_build_up(struct bond *bonds, int N_atoms,
-			     float *d_phi, int N_axes, struct bond *bonds2);
+			     double *d_phi, int N_axes, struct bond *bonds2);
 
 float Compute_RMSD(float f, float *Diff_Tors, int naxes,
 		   struct bond *bonds_ini, struct bond *bonds, int natoms1,
@@ -185,7 +184,7 @@ int Print_mode_PDB(atom *atoms, int natoms,
     factor=(MAX_ANGLE/max_v);
     nstep=AMAX/(omega*factor);
   }
-  float d_phi[naxes];
+  double d_phi[naxes];
   for(i=0; i<naxes; i++)d_phi[i]=Tors[i]*factor;
 
   Print_PDB(file_out, atoms, natoms, coord1, seq, 0, 0.00);
@@ -249,7 +248,7 @@ void Set_masses(float *mass, atom *atoms, int natoms){
   }
 }
 
-void Extract_dphi(float *d_phi, float **Tors_mode, float *sigma,
+void Extract_dphi(double *d_phi, float **Tors_mode, float *sigma,
 		  int N_modes, int N_axes, float factor, long *idum)
 {
   float gasdev(long *idum);
@@ -259,7 +258,7 @@ void Extract_dphi(float *d_phi, float **Tors_mode, float *sigma,
   for(k=0; k<N_modes; k++){
     z=gasdev(idum);
     coeff = z*sigma[k];
-    float *phi=d_phi, *mode=Tors_mode[k];
+    double *phi=d_phi; float *mode=Tors_mode[k];
     for(i=0; i<N_axes; i++){*phi += coeff*(*mode); phi++; mode++;}
   }
   for(i=0; i<N_axes; i++)d_phi[i]*=factor;
@@ -480,12 +479,11 @@ int Simulate_ensemble(int N_struct, float factor, char *name,
     fprintf(file_pdb, "REMARK Omega2 corrected for anharmonicity\n");
   }
 
-  float d_phi[naxes];
-  double delta_phi[naxes]; for(i=0; i<naxes; i++)delta_phi[i]=0;
+  double d_phi[naxes]; for(i=0; i<naxes; i++)d_phi[i]=0;
   float Ene_anhar,
     Ene_anhar_ini=Energy_anharmonic(coord_all_1,atoms,natoms,
-				    nres,Int_list,N_int,Int_KB,20,seq,
-				    axe, naxes, delta_phi);
+				    seq,nres,Int_list,N_int,Int_KB,20,
+				    axe, naxes, d_phi);
   // Write initial PDB
   //fprintf(file_pdb, "MODEL 0  RMSD from PDB= 0.0\n");
   //Print_PDB(file_pdb, atoms, natoms, coord_all_1, seq, 0, 0.00);
@@ -504,21 +502,21 @@ int Simulate_ensemble(int N_struct, float factor, char *name,
       float c = gasdev(&idum)*factor*sigma[k], *mode=NM.Tors[k];
       if(c<c_thr)continue;
       nmode++;
-      for(i=0; i<naxes; i++){d_phi[i]=c*mode[i]; delta_phi[i]=d_phi[i];}
+      for(i=0; i<naxes; i++){d_phi[i]=c*mode[i];}
       Copy_bonds(bonds2, bonds, natoms);
       Build_up(bonds2, natoms, d_phi, naxes);
       Put_coord(coord_all, bonds2, natoms);
       Ene_anhar=Energy_anharmonic(coord_all,atoms,natoms,
-				  nres,Int_list,N_int,Int_KB,20,seq,
-				  axe, naxes, delta_phi);
+				  seq,nres,Int_list,N_int,Int_KB,20,
+				  axe, naxes, d_phi);
       Ene_anhar-= Ene_anhar_ini;
       if(Ene_anhar<=E_thr)Copy_bonds(bonds, bonds2, natoms); // accept
     }
     Put_coord(coord_all, bonds, natoms);
     float rmsd=rmsd_mclachlan_f(coord_all_1, coord_all, mass, natoms);
     Ene_anhar=Energy_anharmonic(coord_all,atoms,natoms,
-				nres,Int_list,N_int,Int_KB,20,seq,
-				axe, naxes, delta_phi);
+				seq,nres,Int_list,N_int,Int_KB,20,
+				axe, naxes, d_phi);
     Ene_anhar-= Ene_anhar_ini;
     fprintf(file_out, "%d %.3f %.3g %d", nconf, rmsd, Ene_anhar, nmode);
     nconf++;
@@ -628,7 +626,7 @@ void Simulate_ensemble_Cart(int N_struct, float factor, char *name,
   if(Ini_ch==0){Empty_tors(Diff_s); free(ali_sim.alignres); Ini_ch=1;}
 }
 
-void Torsional_confchange(float *diff_phi, char *diff_type,
+void Torsional_confchange(double *diff_phi, char *diff_type,
 			  struct bond *bonds_ini,
 			  struct Jacobian *J, struct Reference Ref1,
 			  struct ali_atoms ali_a,
@@ -656,7 +654,7 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
   printf("Internal coordinates of initial structure\n");
   double phi_ini[naxes], phi_opt[naxes]; 
   Internal_coordinates(phi_ini, naxes, bonds_ini, natoms1);
-  float diff_phi0[naxes]; for(i=0; i<naxes; i++)diff_phi0[i]=0;
+  double diff_phi0[naxes]; for(i=0; i<naxes; i++)diff_phi0[i]=0;
 
   // Set references 
   /*char SEL[4]="EB"; // "EB" "ALL"
@@ -754,7 +752,7 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
       }
 
     // Compute angles
-    float diff_step[naxes], diff_all[naxes];
+    double diff_step[naxes], diff_all[naxes];
     for(a=0; a<naxes; a++)diff_step[a]=0;
     double rstep=0, factor=1, excess=1;
     float c_lin[NMODES];
@@ -876,15 +874,15 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
   return;
 }
 
-void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
-			  struct bond *bonds_ini,
-			  struct Jacobian *J, struct Reference Ref1,
-			  struct ali_atoms ali_a,
-			  double Tors_fluct,
-			  atom *atoms1, int natoms1, char *nameout,
-			  struct axe *axes, int naxes,
-			  struct residue *seq, int nres,
-			  struct chain *chains, int Nchain, 
+void Torsional_confchange_RRR(double *diff_phi, char *diff_type,
+			      struct bond *bonds_ini,
+			      struct Jacobian *J, struct Reference Ref1,
+			      struct ali_atoms ali_a,
+			      double Tors_fluct,
+			      atom *atoms1, int natoms1, char *nameout,
+			      struct axe *axes, int naxes,
+			      struct residue *seq, int nres,
+			      struct chain *chains, int Nchain, 
 			      atom *atoms2, int natoms2,
 			      struct Para_simul Para_simul,
 			      struct Normal_Mode *NM, int NMODES)
@@ -902,7 +900,7 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
   printf("Internal coordinates of initial structure\n");
   double phi_ini[naxes], phi_opt[naxes]; 
   Internal_coordinates(phi_ini, naxes, bonds_ini, natoms1);
-  float diff_phi0[naxes]; for(i=0; i<naxes; i++)diff_phi0[i]=0;
+  double diff_phi0[naxes]; for(i=0; i<naxes; i++)diff_phi0[i]=0;
 
   // Set references 
   /*char SEL[4]="EB"; // "EB" "ALL"
@@ -973,7 +971,7 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
   float Lambda=0; int l_Lambda=1; //float rmsd=100
   for(iter=0; iter<IT_MAX; iter++){
 
-    float diff_step[naxes], diff_all[naxes];
+    double diff_step[naxes], diff_all[naxes];
     if(regression==1){
       //if(iter)rmsd=rmsd_mclachlan_f(coord_kin, coord_old, mass_ref, N_ali);
       if((iter==0)){//||(rmsd>RMSD_TOL)){
@@ -1130,7 +1128,6 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
 
   printf("Storing internal coordinates\n");
   Internal_coordinates(phi_opt, naxes, bonds, natoms1);
-  //float *diff_phi=malloc(naxes*sizeof(float));
   for(i=0; i<naxes; i++)diff_phi[i]=phi_opt[i]-phi_ini[i];
   Periodic_angles(diff_phi, axes, naxes);
 
@@ -1152,7 +1149,7 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
   return;
 }
 
-int Torsional_confchange_1angle(float *diff_tors, int naxes, float angle,
+int Torsional_confchange_1angle(double *diff_tors, int naxes, float angle,
 				struct bond *bonds, int natoms1,
 				struct ali_atoms ali_a,
 				float *coord_ref_1, float *coord_ref_2,
@@ -1243,7 +1240,7 @@ void Torsional_confchange_1angle_old(struct bond *bonds, int natoms1,
   for(int iter=0; iter<Para_simul.NSTEPS; iter++){ //ITER_MAX_1
     
     int i, j;
-    float diff_tors[naxes]; for(j=0; j<naxes; j++)diff_tors[j]=0;
+    double diff_tors[naxes]; for(j=0; j<naxes; j++)diff_tors[j]=0;
     float RMSD_min=10000000;
     int i_min=-1, dir_min=0, accept=1;
 
@@ -1388,7 +1385,7 @@ void Simulate_confchange(int N_frames, float *tors_dir, float *d_Cart,
 
   char type='R'; // Random ensemble
   float coeff=3*factor/N_frames;
-  float d_phi[naxes];
+  double d_phi[naxes];
   if(tors_dir){   // Move along a predefined torsional direction   
     for(i=0; i<naxes; i++)d_phi[i]=tors_dir[i]*coeff;
     type='T'; // torsional displacement
@@ -1417,7 +1414,7 @@ void Simulate_confchange(int N_frames, float *tors_dir, float *d_Cart,
   if(Ini_ch==0){Empty_tors(Diff_s); free(ali_sim.alignres); Ini_ch=1;}
 }
 
-int Make_conformations(char type, int N_frames, float *d_phi, float *d_Cart,
+int Make_conformations(char type, int N_frames, double *d_phi, float *d_Cart,
 		       float factor, float coeff, float rmsd0,
 		       float *coord_all_f, float *coord_opt_f,
 		       float *coord_ref, float *coord_ref2,
@@ -1717,7 +1714,7 @@ float Switch_bonds(struct bond *bonds, int naxes, char *prots,
   return(RMSD);
 }
 
-int Change_internal(float *diff_phi, int naxe,
+int Change_internal(double *diff_phi, int naxe,
 		    struct bond *bonds, struct bond *bonds2,
 		    int natoms, int type, int same)
 {
@@ -2000,8 +1997,8 @@ void Standardize_bonds(struct bond *bonds, atom *atoms,
   printf("Coordinates written in %s\n", name);}
 
   // Compute coordinates and RMSD
-  float tors[naxes]; for(i=0; i<naxes; i++)tors[i]=0;
-  Build_up(bonds, natoms, tors, naxes);
+  double d_phi[naxes]; for(i=0; i<naxes; i++)d_phi[i]=0;
+  Build_up(bonds, natoms, d_phi, naxes);
 
   atom atoms2[natoms], *atom2=atoms2, *atom1=atoms;
   for(i=0; i<natoms; i++){
@@ -2010,7 +2007,7 @@ void Standardize_bonds(struct bond *bonds, atom *atoms,
   Copy_atoms_bonds(atoms2, bonds, natoms);
 
   // Adjust torsion angles
-  float diff_phi[naxes];
+  double diff_phi[naxes];
   struct Reference Ref1;
   Set_reference(&Ref1, 0, "EB", atoms, 0, natoms);
   struct ali_atoms ali_a; Copy_ali(&ali_a, Ref1);
@@ -2168,7 +2165,7 @@ float Compute_RMSD(float f, float *Diff_Tors, int naxes,
 		   struct bond *bonds_ini, struct bond *bonds, int natoms1,
 		   struct Reference Ref1, float *coord_ref_2)
 {
-  float diff_tors[naxes];
+  double diff_tors[naxes];
   for(int i=0; i<naxes; i++)diff_tors[i]=f*Diff_Tors[i];
   Copy_bonds(bonds, bonds_ini, natoms1);
   Build_up(bonds, natoms1, diff_tors, naxes);

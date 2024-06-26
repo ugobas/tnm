@@ -55,7 +55,7 @@ void Simulate_confchange(int N_frames, float *tors_dir, float *d_Cart,
 float Make_step(atom *atoms_sim, float *d_phi, struct bond *bonds,
 		atom *atoms, int natoms, int naxes,
 		struct Reference Ref, double *coord_ref);
-void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
+void Torsional_confchange_RRR(double *diff_phi, char *diff_type,
 			      struct bond *BONDS,
 			      struct Jacobian *J, struct Reference Ref1,
 			      struct ali_atoms ali_a, double t2,
@@ -66,7 +66,7 @@ void Torsional_confchange_RRR(float *diff_phi, char *diff_type,
 			      atom *atoms2, int natoms2,
 			      struct Para_simul Para_simul,
 			      struct Normal_Mode *NM, int NMODES);
-void Torsional_confchange(float *diff_phi, char *diff_type,
+void Torsional_confchange(double *diff_phi, char *diff_type,
 			  struct bond *bonds_ini,
 			  struct Jacobian *J, struct Reference Ref1,
 			  struct ali_atoms ali_a,
@@ -79,11 +79,12 @@ void Torsional_confchange(float *diff_phi, char *diff_type,
 			  struct Para_simul Para_simul,
 			  struct Normal_Mode *NM,
 			  char *mode_name, int NMODES, float rmsd_thr);
-int  Change_internal(float *diff_phi, int naxe,
+int  Change_internal(double *diff_phi, int naxe,
 		     struct bond *bonds, struct bond *bonds2,
 		     int natoms, int type, int same);
 int Put_coord(float *coord, struct bond *bonds, int natoms);
-	  
+int Periodic_angles(double *dphi, struct axe *axe, int n);
+
 int Print_mode_PDB(atom *atoms, int natoms,
 		   struct axe *axe, int naxes,
 		   struct bond *bonds, struct residue *seq,

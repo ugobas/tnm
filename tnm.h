@@ -126,12 +126,11 @@ void Print_force_confchange(struct Normal_Mode NM, struct Tors Diff,
 			    char *nameout2);
 
 int Find_atom(atom *atoms, int *i1, int res, int N_atoms, char *atom_type);
-double Energy_anharmonic(float *r, atom *atoms, int natoms, int nres,
+double Energy_anharmonic(float *r, atom *atoms, int natoms,
+			 struct residue *seq, int nres,
 			 struct interaction *Int_list, int N_int,
 			 struct interaction **Int_KB, int NA,
-			 struct residue *seq,
-			 struct axe *axe, int naxes,
-			 double *delta_phi);
+			 struct axe *axe, int naxes, double *delta_phi);
 float Energy_clashes(float *atom_coord, int N);
 float Anharmonicity(struct Normal_Mode NM, int ia,
 		    atom *atoms, int natoms,
