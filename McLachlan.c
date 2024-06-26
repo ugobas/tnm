@@ -142,7 +142,6 @@ double rmsd_mclachlan(double *x1, double *x2, double *wt1, int n)
   
   if(DBG)printf("\t mass-weighted RMS: %.4f\n", rmsd);
   
-  free(tmpatom1);
   
   return (rmsd);
   
@@ -435,7 +434,7 @@ static void center_of_mass(double *ret, double *v, int N, double *mass)
   }
   for(i=0;i<3;i++)ret[i]/= norm;
 }
-static void TranslateVector(double *v, double *transl, int N)
+static void TranslateVector(double *v, double transl[3], int N)
 { 
     int i,m=0;
     for (i=0;i<N;i++){

@@ -10,7 +10,7 @@
 
 float C0_CA=6.0; // distance for normalizing contact interactions (CA)
 float C0_MIN=3.5; //3.5; // distance for normalizing contact interactions (MIN)
-int IJ_MIN=2; // Minimum distance for computing backbone atom contacts
+//int IJ_MIN=2; // Minimum distance for computing backbone atom contacts
 #define MINT 1000 // Maximum number of screened interactions
                   // for any residue pair
 

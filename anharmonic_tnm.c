@@ -12,8 +12,11 @@
 #include "choldc.h"
 #include "simulation.h"
 #include "interactions_tnm.h"
+#include "anharmonic_tnm.h"
 #include "Residues_force_constant.h"
 //#include "Residues_propensity.h"
+//#include "unfolding.h"
+#include "vector.h"
 
 int printed_modes=0;
 int ENEG=0;
@@ -27,7 +30,7 @@ int NPAR=2; // Number of parameters: 2 (only repulsion), 3 (barrier)
 float C22;
 double Ene_anhar_ini;
 struct interaction *Int_list_ini; int N_int_ini;
-struct interaction *Int_list_tmp; int N_int_tmp;
+struct interaction *Int_list_all; int N_int_all;
 float *coord_ini;
 // Covalent energy
 int INI_COV=0;
@@ -35,8 +38,8 @@ double E_COV_FACT=2; // Factor between bonded and not bonded energy
 double Ene_cov_ini;
 struct interaction *Int_list_cov; int N_cov;
 
-static int INT_MAX;        // Maximum number of interactions tested
-float d_CA_high=22; // Maximum distance in stored interactions
+int INT_MAX;        // Maximum number of interactions tested
+float d_CA_high=20; // Maximum distance in stored interactions
 float MAX_ANGLE=0.05; // Maximum allowed angular deviation
 float RMSD_STEP=1.0;  // Interaction list computed when RMSD > RMSD_STEP
 
@@ -52,18 +55,32 @@ float Scale_Prop_EXP=13.8224;
 double **Corr_inv;
 double **pow_ia;
 
-// Routines:
 
-double Energy_anharmonic(float *r, atom *atoms, int natoms, int nres,
+struct inter_new{
+  int i1, i2;
+  float f0; // v(r)
+  float f1; // v'(r)/r
+  float f2; // v''(r)
+  float f2c; //(v''-v'/r)/r^2
+  float r; // |rj-ri|
+  float rj[3]; // rj
+  float rji[3]; // rj-ri
+  float crij[3]; // ri X rj
+  int nat;
+};
+
+// Routines:
+void Initialize_energy(struct interaction *Int_list, int N_int,
+		       float *r, atom *atoms, int natoms, int nres);
+double Energy_anharmonic(float *r, atom *atoms, int natoms,
+			 struct residue *seq, int nres,
 			 struct interaction *Int_list, int N_int,
 			 struct interaction **Int_KB, int NA,
-			 struct residue *seq,
-			 struct axe *axe, int naxes,
-			 double *delta_phi);
-double Energy_debug(float *r, atom *atoms, int natoms, int nres,
+			 struct axe *axe, int naxes, double *delta_phi);
+double Energy_debug(float *r, atom *atoms, int natoms,
+		    struct residue *seq, int nres,
 		    struct interaction *Int_list, int N_int,
-		    struct interaction **Int_KB, int NA,
-		    struct residue *seq);
+		    struct interaction **Int_KB, int NA);
 double Energy_covalent(float *r, atom *atoms, int natoms,
 		       struct bond *bonds);
 
@@ -78,10 +95,8 @@ void Print_potential(FILE *file_out, struct interaction *Int,
 		     int a, int b, char *what, char *AA_code);
 
 
-int **Set_interactions(struct interaction *Int_list, int N_int,
-		       atom *atoms, int Nres);
-int Interactions_CA(struct interaction *Int_list, float thr,
-		    atom *atoms, int natoms, int N_res, float *coord);
+int **Native_interactions(struct interaction *Int_list, int N_int,
+			  atom *atoms, int Nres);
 int Find_CA(atom *atoms, int *i1, int res, int natoms);
 int Start_res(atom *atoms, int i, int res);
 float Min_res_dist(float *r, atom *atoms, int *i1, int *i2, int n, int natm);
@@ -145,7 +160,7 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
   sprintf(out_all, "%s.anharmonic.dat", nameout);
 
   // Angular displacements
-  float d_phi[naxes]; double delta_phi[naxes];
+  double d_phi[naxes], delta_phi[naxes];
   for(i=0; i<naxes; i++){delta_phi[i]=0; d_phi[i]=c_step*Tors[i];}
 
   // Initialization of coordinates
@@ -165,8 +180,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 	     num_atom, natoms); exit(8);
     }
     // Initial energy
-    Ene_anhar_ini=Energy_anharmonic(coord_ini,atoms,natoms,
-				    nres,Int_list,N_int,Int_KB,NA,seq,
+    Ene_anhar_ini=Energy_anharmonic(coord_ini,atoms,natoms,seq,nres,
+				    Int_list,N_int,Int_KB,NA,
 				    axe, naxes, delta_phi);
     printf("Writing %s\n", out_all);
     file_out=fopen(out_all, "w");
@@ -200,8 +215,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 
   // Initialize energy
   ENEG=0;
-  N_int_tmp=N_int_ini;
-  for(i=0; i<N_int_tmp; i++)Int_list_tmp[i]=Int_list_ini[i];
+  N_int_all=N_int_ini;
+  for(i=0; i<N_int_ini; i++)Int_list_all[i]=Int_list_ini[i];
   double Ene_anhar=0, Ene_har=0;
 
   // Output file
@@ -268,8 +283,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
     rmsd_ref= rmsd_mclachlan_f(coord_ref, coord_new, mass, natoms);
     if(rmsd_ref > RMSD_STEP){
       for(i=0; i<n3; i++)coord_ref[i]=coord_new[i];
-      N_int_tmp= 
-	Interactions_CA(Int_list_tmp,d_CA_high,atoms,natoms,nres,coord_ref);
+      N_int_all= 
+	Interactions_CA(Int_list_all,d_CA_high,atoms,natoms,nres,coord_ref);
     }
 
     if(file_pdb){
@@ -279,8 +294,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
       i_step=0;
     }
 
-    Ene_anhar=Energy_anharmonic(coord_new,atoms,natoms,
-				nres,Int_list,N_int,Int_KB,NA,seq,
+    Ene_anhar=Energy_anharmonic(coord_new,atoms,natoms,seq,nres,
+				Int_list,N_int,Int_KB,NA,
 				axe, naxes, delta_phi)
       - Ene_anhar_ini;
     //if(C_LIN)Ene_cov_tors=Energy_covalent(coord_new,atoms,natoms,bonds);
@@ -289,9 +304,9 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
       printf(" E= %.4g E_har= %.2g c= %.2f rmsd= %.2g\n",
 	     Ene_anhar, Ene_har, c_all, rmsd_ini);
       printf("Native energy: ");
-      Energy_debug(coord_ini,atoms,natoms,nres,Int_list,N_int,Int_KB,NA,seq);
+      Energy_debug(coord_ini,atoms,natoms,seq,nres,Int_list,N_int,Int_KB,NA);
       printf("Actual energy: ");
-      Energy_debug(coord_new,atoms,natoms,nres,Int_list,N_int,Int_KB,NA,seq);
+      Energy_debug(coord_new,atoms,natoms,seq,nres,Int_list,N_int,Int_KB,NA);
       ENEG=1;
       //exit(8);
     }
@@ -301,8 +316,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
       rmsd2   = rmsd_mclachlan_f(coord_new, coord_lin, mass, natoms);
       rmsd_lin= rmsd_mclachlan_f(coord_ini, coord_lin, mass, natoms);
       Ene_lin=
-	Energy_anharmonic(coord_lin,atoms,natoms,nres,
-			  Int_list,N_int,Int_KB,NA,seq,axe,naxes,delta_phi)
+	Energy_anharmonic(coord_lin,atoms,natoms,seq,nres,
+			  Int_list,N_int,Int_KB,NA,axe,naxes,delta_phi)
 	- Ene_anhar_ini;
       Ene_cov_lin=Energy_covalent(coord_lin,atoms,natoms,bonds);
       if((Ene_lin < -0.02)&&(ENEG==0)){
@@ -310,9 +325,9 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 	printf(" E= %.4g E_har= %.2g c= %.2f rmsd= %.2g\n",
 	       Ene_lin, Ene_har, c_all, rmsd_lin);
 	printf("Native energy: ");
-	Energy_debug(coord_ini,atoms,natoms,nres,Int_list,N_int,Int_KB,NA,seq);
+	Energy_debug(coord_ini,atoms,natoms,seq,nres,Int_list,N_int,Int_KB,NA);
 	printf("Actual energy: ");
-	Energy_debug(coord_lin,atoms,natoms,nres,Int_list,N_int,Int_KB,NA,seq);
+	Energy_debug(coord_lin,atoms,natoms,seq,nres,Int_list,N_int,Int_KB,NA);
 	ENEG=1;
       }
     }
@@ -374,17 +389,15 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 	    struct bond bonds_tmp[natoms];
 	    Copy_bonds(bonds_tmp, bonds, natoms);
 	    Set_bonds_measure(bonds_tmp, natoms, atoms);
-	    float d_phi_tmp[naxes];
-	    double delta_phi_tmp[naxes];
-	    for(i=0; i<naxes; i++){
-	      delta_phi_tmp[i]=Tors[i]*c; d_phi_tmp[i]=delta_phi_tmp[i];
-	    }
+	    double d_phi_tmp[naxes];
+	    for(i=0; i<naxes; i++){d_phi_tmp[i]=Tors[i]*c;}
 	    Build_up(bonds_tmp, natoms, d_phi_tmp, naxes);
 	    Put_coord(coord_new, bonds_tmp, natoms);
 	    float d_old=d, E_old= E;
 	    d=rmsd_mclachlan_f(coord_ini, coord_new, mass, natoms);
-	    E=Energy_anharmonic(coord_new,atoms,natoms,nres,Int_list,N_int,
-			      Int_KB,NA,seq,axe,naxes,delta_phi_tmp)
+	    E=Energy_anharmonic(coord_new,atoms,natoms,seq,nres,
+				Int_list,N_int,Int_KB,NA,axe,naxes,
+				d_phi_tmp)
 	      - Ene_anhar_ini;
 	    if(fabs(d_old-d)>0.15){
 	      printf("ERROR anhar mode %d c= %.2f interpol. d= %.2f d=%.2f\n",
@@ -429,8 +442,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
       c_step=-c_step; c_step_fit=-c_step_fit; i_step=0;
       for(i=0; i<naxes; i++){delta_phi[i]=0; d_phi[i]=c_step*Tors[i];}
       Set_bonds_measure(bonds, natoms, atoms);
-      N_int_tmp=N_int_ini;
-      for(i=0; i<N_int_tmp; i++)Int_list_tmp[i]=Int_list_ini[i];
+      N_int_all=N_int_ini;
+      for(i=0; i<N_int_ini; i++)Int_list_all[i]=Int_list_ini[i];
       rmsd_max=rmsd_ini;
       E_fit[0]=0; RMSD_fit[0]=0;
     }
@@ -487,8 +500,8 @@ float Anharmonicity(struct Normal_Mode NM, int ia,
 
 //////////////////////////////////////////////////////////////////////////
 // returns a matrix with the index of the interaction data (in Int_list) from the two residues ID, or -1 if no interaction
-int **Set_interactions(struct interaction *Int_list, int N_int,
-		       atom *atoms, int nres)
+int **Native_interactions(struct interaction *Int_list, int N_int,
+			  atom *atoms, int nres)
 {
   int **matrix=malloc(nres*sizeof (int *)); int i1, i2;
   for(i1=0; i1<nres; i1++){
@@ -500,7 +513,7 @@ int **Set_interactions(struct interaction *Int_list, int N_int,
     i1=atoms[Int->i1].res;
     i2=atoms[Int->i2].res;
     if((i1<0)||(i1>=nres)||(i2<0)||(i2>=nres)){
-      printf("ERROR in Set_interactions i1=%d i2= %d nres=%d n= %d\n",
+      printf("ERROR in Native_interactions i1=%d i2= %d nres=%d n= %d\n",
 	     i1, i2, nres, n); exit(8);
     }
     matrix[i1][i2]=n;
@@ -596,36 +609,20 @@ int Start_res(atom *atoms, int i, int res){
 }
 
 //////////////////////////////////////////////////////////////////////////
-double Energy_anharmonic(float *r, atom *atoms, int natoms, int nres,
+double Energy_anharmonic(float *r, atom *atoms, int natoms,
+			 struct residue *seq, int nres,
 			 struct interaction *Int_list, int N_int,
 			 struct interaction **Int_KB, int NA,
-			 struct residue *seq,
 			 struct axe *axe, int naxes,
 			 double *delta_phi)
 {
   if(INI_ENERGY==0){
-    INI_ENERGY=1;
-    E_repulsion=Int_list[0].A4;
-    C22=C_THR*C_THR;
-    lambda_2=2*lambda;
-    lambda_4=4*lambda;
-
-    // Auxiliary matrices for energy computation: interaction list
-    INT_MAX=150*nres;
-    nat_res1_res2=Set_interactions(Int_list, N_int, atoms, nres);
-    // YY matrix with the index of the interaction data (in Int_list)
-    Int_list_ini=malloc(INT_MAX*sizeof(struct interaction));
-    Int_list_tmp=malloc(INT_MAX*sizeof(struct interaction));
-    N_int_ini=
-      Interactions_CA(Int_list_ini, d_CA_high, atoms, natoms, nres, r);
-    N_int_tmp=N_int_ini;
-    for(int i=0; i<N_int_tmp; i++)Int_list_tmp[i]=Int_list_ini[i];
-    // YY List of interactions with d(CA-CA)<22
+    Initialize_energy(Int_list, N_int, r, atoms, natoms, nres);
   }
 
   double E_nat=0, E_nonat=0;
-  for(int i=0; i<N_int_tmp; i++){
-    int i1=Int_list_tmp[i].i1, i2=Int_list_tmp[i].i2;
+  for(int i=0; i<N_int_all; i++){
+    int i1=Int_list_all[i].i1, i2=Int_list_all[i].i2;
     int n=nat_res1_res2[atoms[i1].res][atoms[i2].res];
     float d=Min_res_dist(r, atoms, &i1, &i2, n, natoms);
     if(d>=C_THR)continue;
@@ -665,15 +662,141 @@ double Energy_anharmonic(float *r, atom *atoms, int natoms, int nres,
   return(E_nat+E_nonat+0.5*E_tors);
 }
 
-double Energy_debug(float *r, atom *atoms, int natoms, int nres,
+float Energy_anharmonic_new(struct inter_new *New_inter,
+			    int *N_int_new, int N_int_max,
+			    int *nc_nat, int *nc_nonat,
+			    float *Ene_nat_attr, float *Ene_nat_rep,
+			    float *Ene_nonat,
+			    float *coord, atom *atoms, int natoms,
+			    struct residue *seq, int nres,
+			    struct interaction *Int_list, int N_int,
+			    struct interaction **Int_KB, int NA,
+			    struct axe *axe, int naxes,
+			    double *delta_phi, int K_tors, int sec_der)
+{
+
+  if(INI_ENERGY==0){
+    Initialize_energy(Int_list, N_int, coord, atoms, natoms, nres);
+    INI_ENERGY=1;
+  }
+
+  *N_int_new=0; *nc_nat=0; *nc_nonat=0;
+  *Ene_nat_attr=0; *Ene_nat_rep=0; *Ene_nonat=0;
+  for(int i=0; i<N_int_all; i++){
+    int i1=Int_list_all[i].i1, i2=Int_list_all[i].i2;
+    float d=Min_res_dist(coord, atoms, &i1, &i2, -1, natoms);
+    if(d>=C_THR)continue;
+    int n=nat_res1_res2[atoms[i1].res][atoms[i2].res];
+    if(d<=0){
+      printf("ERROR, d(%d,%d)= %.2g n=%d\n", i1, i2, d, n);
+      exit(8);
+    }
+
+    struct interaction *Int_k;
+    float f0;
+    if(n>=0){
+      Int_k=Int_list+n;
+      f0=Compute_V(Int_k, d);
+      if(f0>0){(*Ene_nat_rep)+=f0;}
+      else{(*Ene_nat_attr)+=f0;}
+      (*nc_nat)++;
+      if(f0< (Int_k->E_min-0.00001) || n>=N_int){
+	printf("ERROR in Energy_anharmonic_new, inter. %d (nat=%d/%d) "
+	       "res1=%d res2=%d d=%.4g d0= %.4g V(d)=%.4g < V(d0)=%.4g\n",
+	       i,n,N_int,atoms[i1].res,atoms[i2].res,d,Int_k->r0,
+	       f0,Int_k->E_min);
+	exit(8);
+      }
+
+    }else{
+      int a=seq[atoms[i1].res].i_aa, b=seq[atoms[i2].res].i_aa;
+      Int_k=Int_KB[a]+b;
+      f0=Compute_V(Int_k, d);
+      (*Ene_nonat)+=f0; //-Int_KB[a][b].E_min;
+      (*nc_nonat)++;
+    }
+    if(New_inter){
+      struct inter_new *Int=New_inter+(*N_int_new);
+      Int->i1=i1; Int->i2=i2;
+      Int->nat=n;
+      Int->f0=f0;
+      Int->r=d;
+      Int->f1=Compute_V1(Int_k, d);
+      float *r1=coord+3*i1, *r2=coord+3*i2;
+      for(int j=0; j<3; j++){
+	Int->rj[j]=r2[j];
+	Int->rji[j]=r2[j]-r1[j];
+      }
+      Vector_product(Int->crij, r1, r2);
+      if(sec_der){
+	Int->f2=Compute_V2(Int_k, d, 1); // do not assume it is minimum!
+      }
+    }
+    (*N_int_new)++;
+    if(*N_int_new > N_int_max){
+      printf("ERROR, > %d interactions in Energy_anharmonic_new "
+	     "Increase N_int_max\n", *N_int_new); exit(8);
+    }
+  }
+  if(K_tors==0){return(*Ene_nat_attr+*Ene_nat_rep+*Ene_nonat);}
+
+  // Compute_torsional energy
+  double E_phi=0, E_psi=0, E_omg=0, E_chi=0, E_BA=0, E_BL=0, E_BT=0;
+  struct axe *ax=axe;
+  for(int i=0; i<naxes; i++){
+    float d2=delta_phi[i]*delta_phi[i];
+    if(ax->type=='f'){E_phi+=d2;}
+    else if(ax->type=='p'){E_psi+=d2;}
+    else if(ax->type=='l'){E_BL+=d2;}
+    else if(ax->type=='a'){E_BA+=d2;}
+    else if(ax->type=='t'){E_BT+=d2;}
+    else if(ax->type=='o'){E_omg+=d2;}
+    else if(ax->type=='s'){E_chi+=d2;}
+    ax++;
+  }
+  double E_tors=K_PHI*E_phi;
+  if(E_psi)E_tors+=K_PSI*E_psi;
+  if(E_omg)E_tors+=K_OMEGA*E_omg;
+  if(E_chi)E_tors+=K_CHI*E_chi;
+  if(E_BL)E_tors+=K_BL*E_BL;
+  if(E_BA)E_tors+=K_BA*E_BA;
+  if(E_BT)E_tors+=K_PHI*E_BT;
+  return(*Ene_nat_attr+*Ene_nat_rep+*Ene_nonat+0.5*E_tors);
+
+}
+
+void Initialize_energy(struct interaction *Int_list, int N_int,
+		       float *r, atom *atoms, int natoms, int nres)
+{
+  INI_ENERGY=1;
+
+  E_repulsion=Int_list[0].A4;
+  C22=C_THR*C_THR;
+  lambda_2=2*lambda;
+  lambda_4=4*lambda;
+  
+  // Auxiliary matrices for energy computation: interaction list
+  nat_res1_res2=Native_interactions(Int_list, N_int, atoms, nres);
+  // YY matrix with the index of the interaction data (in Int_list)
+  INT_MAX=150*nres;
+  Int_list_all=malloc(INT_MAX*sizeof(struct interaction));
+  N_int_all=
+    Interactions_CA(Int_list_all, d_CA_high, atoms, natoms, nres, r);
+  N_int_ini=N_int_all;
+  Int_list_ini=malloc(N_int_ini*sizeof(struct interaction));
+  for(int i=0; i<N_int_ini; i++)Int_list_ini[i]=Int_list_all[i];
+  // YY List of interactions with d(CA-CA)<22
+}
+
+double Energy_debug(float *r, atom *atoms, int natoms,
+		    struct residue *seq, int nres,
 		    struct interaction *Int_list, int N_int,
-		    struct interaction **Int_KB, int NA,
-		    struct residue *seq)
+		    struct interaction **Int_KB, int NA)
 {
   double E_nat=0, E_nonat=0; int n_nat=0, n_not=0;
   double d_min=100, d_nat_ave=0; int i1_min=-1, i2_min=-1;
-  for(int i=0; i<N_int_tmp; i++){
-    int i1=Int_list_tmp[i].i1, i2=Int_list_tmp[i].i2;
+  for(int i=0; i<N_int_all; i++){
+    int i1=Int_list_all[i].i1, i2=Int_list_all[i].i2;
     int n=nat_res1_res2[atoms[i1].res][atoms[i2].res];
     float d=Min_res_dist(r, atoms, &i1, &i2, n, natoms);
     if(d>=C_THR)continue;
@@ -721,7 +844,7 @@ double Energy_debug(float *r, atom *atoms, int natoms, int nres,
       if(d<d_min){d_min=d; i1_min=i1; i2_min=i2;}
     }
   }
-  printf("%d tested interactions over %d pairs, ", N_int_tmp, nres*(nres-1)/2);
+  printf("%d tested interactions over %d pairs, ", N_int_all, nres*(nres-1)/2);
   printf("%d native over %d, %d non-native d_thr= %.2f\n",
 	 n_nat, N_int, n_not, C_THR);
   printf("Energy: native %.4g |r0-d|=%.3g non-native %.4g\n",
@@ -837,15 +960,12 @@ void Assign_interactions_KB(struct interaction **Int_KB, int Na,
       if(NPAR==2){
 	Int_ptr->r0=C_THR;
 	Int_ptr->E_min=0;
-	Int_ptr->A4=A4;
-	if(POW){
-	  fc2=pow(C_THR, -lambda_2);
-	}else{
-	  fc2=exp(-lambda_2*C_THR);
-	}
-	Int_ptr->A2=-A2*fc2;
-	Int_ptr->A0=-Int_ptr->A4*fc2*fc2-Int_ptr->A2*fc2;
+	if(POW){fc2=pow(C_THR, -lambda_2);}
+	else{fc2=exp(-lambda_2*C_THR);}
 	Int_ptr->A1=0;
+	Int_ptr->A2=-A2*fc2;
+	Int_ptr->A4=A4;
+	Int_ptr->A0=-Int_ptr->A4*fc2*fc2-Int_ptr->A2*fc2;
 	r3=C1_THR;
       }else{ // Three parameters fit
 	if(D_Res[a][b]>=C_THR){
@@ -892,7 +1012,8 @@ int Determine_Ak(struct interaction *Int, double V0, double KK, int n)
   }
   double alpha=fc/f, a2=alpha*alpha, aa=1.-alpha;
   double f2=f*f, fc2=fc*fc;
-  Int->A4=(V0+0.5*V2*aa*aa)/(f2*f2*(3.0-a2*a2+6*a2-8.0*alpha)); // Condition on V
+  // Condition on V
+  Int->A4=(V0+0.5*V2*aa*aa)/(f2*f2*(3.0-a2*a2+6*a2-8.0*alpha));
   if(Int->A4<0){
     printf("ERROR A4= %.3g <0 n= %d", Int->A4, n);
     printf(" alpha=%.2g V0= %.2g V2= %.2g\n", alpha, V0, V2); 

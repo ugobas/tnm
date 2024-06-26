@@ -13,4 +13,5 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
 		       int N_axes, struct Reference Ref_kin, 
 		       struct interaction *Int_list, int N_int,
 		       struct residue *seq, int Nres,
-		       char *nameout1, char *Mut_para);
+		       char *nameout1, char *Mut_para,
+		       int PRED_MUT, int IWT);

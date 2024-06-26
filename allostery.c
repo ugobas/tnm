@@ -1494,7 +1494,7 @@ void Binding_sites(int *site,
   int min_chain[Na], max_chain[Na], all_chain[Na];
   char chain_lab[Na];
   for(i=0; i<N_sites; i++){
-    int nr=nres_site[i]; if(nr<=1)continue;
+    int nr=nres_site[i]; //if(nr<=1)continue;
     int *isite=site_res[i];
     int nchain=Count_chains(ichain, min_chain, max_chain, chain_lab,
 			    chain_res[i], isite, nr);

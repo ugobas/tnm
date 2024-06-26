@@ -123,7 +123,7 @@ float Fit_fluctuations(int FIT_B, float *B_TNM,
     printf("Force constant: %.4g x %.4g = %.4g    -> K0 = %.4g"
 	   "  (Bfactor fit)\n", kappa,KAPPA,kappa*KAPPA,kappa*K0);
   }else if(FIT_B<0){
-    kappa= sum_sigma2/(N_ref*RMSD_EXP*RMSD_EXP); //Ref_kin.mass_sum*
+    kappa= sum_sigma2/(Ref_kin.mass_sum*RMSD_EXP*RMSD_EXP);
     printf("Force constant: %.4g x %.4g = %.4g     -> K0 = %.4g"
 	   "   (<RMSD>= %.2f)\n", kappa,KAPPA,kappa*KAPPA,kappa*K0,RMSD_EXP);
   }else { //(FIT_B==0)||(slope_B<=0)
@@ -131,7 +131,7 @@ float Fit_fluctuations(int FIT_B, float *B_TNM,
     printf("Force constant: %.4g x %.4g = %.4g    -> K0 = %.4g"
 	   "    (Default value)\n", kappa,KAPPA,kappa*KAPPA,K0);
   }
-  *RMSD_NM=sqrt(sum_sigma2/(N_ref*kappa)); //Ref_kin.mass_sum*
+  *RMSD_NM=sqrt(sum_sigma2/(Ref_kin.mass_sum*kappa));
   printf("RMSD of normal modes= %.3f (pred)\n", *RMSD_NM);
   if(FIT_B>0 && Temp>0){
     *Temp_comp=Temp;

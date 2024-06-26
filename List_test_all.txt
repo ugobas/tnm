@@ -1,0 +1,22 @@
+### GLUTATHIONE_S-TRANSFERASE_mutations.txt
+10gs A 1eoh C -  0 0.55
+### Carbonic_anhidrasa2_mutations.txt
+12ca A 1eou A -  0 0.40
+12ca A 1g6v A -  0 0.73
+12ca A 1xeg A -  0 0.43
+12ca A 1xev A -  0 0.44
+12ca A 1xev B -  0 0.48
+12ca A 1xev C -  0 0.47
+12ca A 1xev D -  0 0.44
+12ca A 2fmg A -  0 0.44
+12ca A 2vva X -  0 0.41
+12ca A 2wd2 A -  0 0.40
+12ca A 2x7s A -  0 0.61
+12ca A 2x7u A -  0 0.44
+12ca A 3bet A -  0 0.40
+12ca A 3bl0 A -  0 0.42
+12ca A 3f4x A -  0 0.44
+12ca A 3igp A -  0 0.40
+12ca A 3k2f A -  0 0.41
+12ca A 3kwa A -  0 0.44
+12ca A 3ni5 A -  0 0.41

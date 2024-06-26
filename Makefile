@@ -51,7 +51,7 @@ COBJ= main_tnm.o \
 	allostery.o \
 	site_dynamics.o \
 	allocate.o \
-	choldc.o \
+	choldc.o ludcmp.o lubksb.o \
 	d_diagonalize.o \
 	nrutil.o \
 	pythag.o \
@@ -67,6 +67,7 @@ COBJ= main_tnm.o \
 	ran2.o \
 	random3.o 
 # shadow_interactions.o 
+#	unfolding.o \
 
 PROG=tnm
 

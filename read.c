@@ -406,30 +406,28 @@ int Read_coord(char *pdb_name, int *nmr,
     if(chain==' ')chain=*chain_pdb;
     if(readall)
     	{if(chain!=chain_old)
-    		{printf("Reading chain %c\n", chain);
-		 	 chain_to_read[nchains]=chain; nchains++; chain_old=chain;
-      		}
+	    {printf("Reading chain %c\n", chain);
+	      chain_to_read[nchains]=chain; nchains++; chain_old=chain;
+	    }
     	}
     else
-    	{if((chain_to_read[0]==' ')||(chain_to_read[0]=='\0'))
-    		{chain_to_read[0]=chain; chain_to_read[1]='\0';
-      		}
-      	 for(ic=0; ic<nchains; ic++)
-      	 	{if(chain==chain_to_read[ic])
-      	 		{rchain[ic]=1; goto read;}
-      		}
-      	 continue;
-    	}
-
+      {if((chain_to_read[0]==' ')||(chain_to_read[0]=='\0'))
+	  {chain_to_read[0]=chain; chain_to_read[1]='\0';
+	  }
+	for(ic=0; ic<nchains; ic++)
+	  {if(chain==chain_to_read[ic])
+	      {rchain[ic]=1; goto read;}
+	  }
+	continue;
+      }
+    
     /*if(*chain_to_read!='*'){
       if((*chain_to_read==' ')||(*chain_to_read=='\0'))*chain_to_read=chain;
       for(ic=0; ic<nchains; ic++)if(chain==chain_to_read[ic])goto read;
       continue;
       }*/
-
-
-
-
+    
+   
   read:
     // Hydrogen atoms
     if((string[13]=='H')||(string[12]=='H') || (string[13]=='D') ||(string[12]=='D'))
@@ -543,6 +541,31 @@ int Read_coord(char *pdb_name, int *nmr,
 }
 
 //////////////////////////////////////////////////////////////////////////////////
+
+void GetPdbId(char *pdb_file_in, char *pdbid){
+     /* This subroutine pretends to get the
+        PDB id from a pdb file name, and ressembles
+	quite a lot my "old-and-dirty-Perl" days */
+
+  int start=0, end=0, i,j; //end2=0
+
+  for(i=strlen(pdb_file_in)-1;i>=0;i--){
+    if (pdb_file_in[i]=='.'){
+      end=i-1;
+    }else if (pdb_file_in[i]=='/'){
+      start=i+1; //end2=i-1;
+      break;
+    }
+  }
+  j=0;
+  for (i=start;i<=end;i++){
+    pdbid[j]=pdb_file_in[i];
+    j++;
+  }
+  pdbid[j]='\0';
+}
+
+
 int Read_ligand(char *pdb_name, int *nmr, struct residue *seq, atom *atoms,
 	       char *chain_to_read, int *ANISOU)
 {

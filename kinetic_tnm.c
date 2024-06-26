@@ -15,22 +15,12 @@ int START=1;
 #include <stdio.h>
 
 // Rigid body degrees of freedom
-void Center_atoms(atom *atoms, int N_atoms, struct Reference Ref);
-void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref);
-void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
-		 struct Reference Ref);
 void Eckart_test(float **Jacobian_ar, int N_axes,
 		 atom *atoms, int N_atoms,
 		 struct Reference Ref, struct axe *axes);
 int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
 		 struct Reference Ref, int mode, struct axe *axe);
 
-void Inertia_tensor(double **inertia, double **corr_sum, double *r_sum,
-		    double M_sum);
-float Sum_inertia(double *mr_tot, double **corr_sum,
-		  atom *atoms, struct Reference Ref,
-		  int ini_ref, int end_ref);
-float Empty_inertia(double *mr_tot, double **corr_sum);
 
 int Kinetic_energy(double ***T_mat, float *mass_coord,
 		   struct axe *axe, int ini_axe, int N_axes,
@@ -251,24 +241,17 @@ int Kinetic_energy_fast(struct Jacobian *J, struct axe *axe, int N_axes,
   // Lower tridiagonal matrix T_sqrt[l][k] with k<=l
 
   double I_tot_rot_l[3], I_part_rot_l[3];
-  double **inertia_part=Allocate_mat2_d(3,3);
   for(l=0; l<N_axes; l++){
     struct axe *axe_l=axe+l;
 
-    // Inertia tensor must NOT be in center of mass frame
-    double *mr_l=axe_l->MR;
-    double r2=Scalar_product_3_d(mr_l, mr_l)/axe_l->mass;
+    // Inertia tensor was placed in local center of mass frame by Eckart
     for(i=0; i<3; i++){
+      I_part_rot_l[i]=0; I_tot_rot_l[i]=0;
       for(j=0; j<3; j++){
-        inertia_part[i][j]=axe_l->I[i][j]-mr_l[i]*mr_l[j]/axe_l->mass;
+	I_part_rot_l[i]+=axe_l->I[i][j]*axe_l->rot[j];
+	I_tot_rot_l[i]+=inertia[i][j]*axe_l->global_rot[j];
       }
-      inertia_part[i][i]+=r2;
     }
-    /*for(i=0; i<3; i++){
-      for(j=0; j<3; j++)inertia_part[i][j]=axe_l->I[i][j];
-      }*/
-    Matrix_multiplication(I_part_rot_l, inertia_part, axe_l->rot, 3);
-    Matrix_multiplication(I_tot_rot_l, inertia, axe_l->global_rot, 3);
 
     for(k=0; k<=l; k++){
       struct axe *axe_k=axe+k;
@@ -278,8 +261,8 @@ int Kinetic_energy_fast(struct Jacobian *J, struct axe *axe, int N_axes,
       // We use the fact that axes are nested: axe l>=k moves a
       // subset of atoms moved by axe k, unless side chain
       if(Dof_overlap(axe_k, axe_l)){
-	T+=Scalar_product_3_d(I_part_rot_l, axe_k->rot);
 	T+=axe_l->mass*Scalar_product_3_d(axe_l->shift, axe_k->shift);
+	T+=Scalar_product_3_d(I_part_rot_l, axe_k->rot);
 	Vector_product_d(tv_kl, axe_k->shift, axe_l->rot);
 	Vector_product_d(tv_lk, axe_l->shift, axe_k->rot);
 	double tv[3]; for(j=0; j<3; j++)tv[j]=tv_kl[j]+tv_lk[j];
@@ -304,7 +287,6 @@ int Kinetic_energy_fast(struct Jacobian *J, struct axe *axe, int N_axes,
     }
   }
 
-  Empty_matrix_d(inertia_part, 3);
   Empty_matrix_d(corr_sum, 3);
   Empty_matrix_d(inertia, 3);
 
@@ -399,8 +381,8 @@ void  Set_rot_shift(struct axe *axes, int N_axes, atom *atoms, int N_atoms)
   // Axes vector and shift
   for(k=0; k<N_axes; k++){
     struct axe *axe=axes+k;
-    double *r1=axe->bond->previous->atom->r;
-    double *r2=axe->bond->atom->r;
+    double *r1=(atoms+axe->bond->previous->i_atom)->r;
+    double *r2=(atoms+axe->bond->i_atom)->r;
     double v2=0;
     for(j=0; j<3; j++){
       axe->offset[j]=r1[j];               // Get offset as r1
@@ -421,7 +403,7 @@ void  Set_rot_shift(struct axe *axes, int N_axes, atom *atoms, int N_atoms)
 	printf("ERROR in bond angle %d\n", k); exit(8);
       }
       // Compute normal vector
-      double *r0=axe->bond->previous->previous->atom->r;
+      double *r0=(atoms+axe->bond->previous->previous->i_atom)->r;
       double v0[3], normal[3];
       for(j=0; j<3; j++)v0[j]=r1[j]-r0[j];
       Vector_product_d(normal, v, v0);
@@ -479,6 +461,7 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
     printf("Center of mass: ");
     for(i=0; i<3; i++)printf("  %.7f", r_ave[i]);
     printf("   M=%.0f\n", M_tot);
+    START=0;
   }
 
   double **inertia_tot=Allocate_mat2_d(3,3);
@@ -503,7 +486,6 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
       last_kin=axe->last_kin;
       i_last=last_kin;
     }
-    //M_part+=Sum_inertia(mr_part, corr_sum, atoms, Ref, axe->first_kin, i_last);
     M_part+=Sum_inertia(mr_part, corr_sum, atoms, Ref, axe->first_kin, i_last);
     Inertia_tensor(inertia_part, corr_sum, mr_part, M_part);
     i_last=axe->first_kin-1;
@@ -554,11 +536,16 @@ void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
       axe->local_shift[i]=axe->global_shift[i]+axe->shift[i];
     }
 
-    // Store kinetic variables
+    // Store kinetic variables.
+    // Remove center of mass from inertia tensor
     axe->mass=M_part;
+    double mr2=Scalar_product_3_d(mr_part, mr_part)/axe->mass;
     for(i=0; i<3; i++){
       axe->MR[i]=mr_part[i];
-      for(j=0; j<3; j++)axe->I[i][j]=inertia_part[i][j];
+      for(j=0; j<3; j++){
+	axe->I[i][j]=inertia_part[i][j]-mr_part[i]*mr_part[j]/axe->mass;
+      }
+      axe->I[i][i]+=mr2;
     }
 
     // New axe

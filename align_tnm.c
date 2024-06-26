@@ -36,7 +36,7 @@ static int PDB_ali(int *ali, int *seq_id, int nali,
 	    char *ali1, struct chain *chp1, int n1,
 	    char *ali2, struct chain *chp2, int n2);
 static int Max_length(struct chain *chains, int Nchain);
-static void Match_chains_by_length(int *match1,
+void Match_chains_by_length(int *match1,
 			    struct chain *chains1, int Nchain1,
 			    struct chain *chains2, int Nchain2);
 static void Best_match(int *match1, int *free2,

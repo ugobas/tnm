@@ -1,3 +1,34 @@
+
+/*
+  Units used in the TNM program:
+  energy kBT= 1 -> kBT at 293K = 1.381 e-23 *293= 4.05e-21 J
+  length = 1A   -> e-10 m
+  mass = atomic mass -> 1.66e-27 kg
+  time unit =  0.64 e-13 = 6.4 e-12 = 6.4 ps
+  frequency = Freq_unit = 1/time_unit = 0.156 ps^(-1)
+  frequency omega_q = kBT/h/ = (0.1636 ps)^(-1)= 6.1 ps^(-1) = 39 Freq_unit
+  1/(omega_q)^2= 0.00065 in internal units
+
+  Normal modes:
+  omega^2 represents both frequency^2 in Freq_unit^2 and
+  omega^2/RT in units of mass^-1 length^-2
+  (RT/M*omega^2) has units of length
+  kinetic energy matrix T has dimension m*l^2
+  Mass_weighted torsional eigenvector u^alpha has dimension 0
+  Torsional eigenvector v^alpha = T^(-1/2)u^alpha has dimension m^(-1/2)l^(-1)
+  Cartesian eigenvector x^alpha = Jv^alpha has dimension m^(-1/2)
+  Cartesian eigenvector r^alpha = m^(1/2)x^alpha has dimension 0 
+  displacement d_i=c_alpha x^\alpha has dimension of length, with
+  dimension(c_alpha)=m^(1/2)*l
+  <c_alpha>^2 = (RT/omega_alpha^2)
+  c_alpha*x^alpha has dimension l
+  c_alpha*r^alpha has dimension m^(1/2)*l
+  c_alpha*v^alpha has dimension 0 (torsion angle)
+  c_alpha*u^alpha has dimension m^(1/2)*l
+  MSD = sum_i m_i*|d_i|^2/M = sum_alpha(c_alpha)^2/M
+  = sum_alpha(RT/M*omega_alpha^2)
+ */
+
 #define PRG "tnm"
 int LABEL=0; // Print model parameters in file name?
 
@@ -42,6 +73,7 @@ int NMUT=-2; /* Mutations between the two proteins required for analysis.
 		NMUT=0: Sequences must be identical.
 		NMUT=1: Exactly one mutation */
 int PRED_MUT=0; // Predict mutations?
+int IWT=0; // Average rmsd of WT mut over the lowest IWT ones
 //int OPT_MUT=0; // Optimize coefficients to fit RMSD of mutation?
 char Mut_para[100]="Mutation_para.in";
 
@@ -52,6 +84,11 @@ char Mut_para[100]="Mutation_para.in";
 #define D_REP_DEF        2.5  // Threshold for repulsions
 #define MAX_ANGLE_DEF    0.4  // Max. angle for torsional deformations, radiants
 float s0=0.07;       // Entropy per residue, used for simulations
+float cont_inf=3.9; // Asymptotic value of number of contacts
+int N_int_long;
+
+// Unfolding
+float K_tors_unfold=0.2; // Use torsional springs in unfolding calculations
 
 // Analysis performed
 int ANHARMONIC=0;
@@ -65,16 +102,16 @@ int SITE_DYNAMICS=0; // Examine dynamics of binding sites
 
 
 // Dynamical couplings
-int PRINT_DEF_COUPLING=0;  // Print deformation coupling?
-int PRINT_DIR_COUPLING=0;  // Print directionality coupling?
-int PRINT_COV_COUPLING=0;  // Print covariance coupling?
-int PRINT_COORD_COUPLING=0; // Print coordination coupling?
+int PRINT_DEF_COUPLING=1;  // Print deformation coupling?
+int PRINT_DIR_COUPLING=1;  // Print directionality coupling?
+int PRINT_COV_COUPLING=1;  // Print covariance coupling?
+int PRINT_COORD_COUPLING=1; // Print coordination coupling?
 int PRINT_SIGMA_DIJ=0;  // Print variance of DIJ distanc
 int PRINT_CMAT=0;       // Print contact matrix
 int STRAIN=0; // Compute strain profile, similar to PNAS 106:14253 2009 ?
 int ALL_PAIRS=0; // Print couplings for all pairs?
-float SIGMA=1.0; // Print only couplings > SIGMA*std.dev.
-char PROF_TYPE='A';
+float SIGMA=1.5; // Print only couplings > SIGMA*std.dev.
+char PROF_TYPE='C';
 char SITES[100]="";
 
 // Default parameters
@@ -122,6 +159,7 @@ char SITES[100]="";
 #include "mutation.h"
 #include "diagonalize.h"
 #include "Fit_B.h"
+//#include "unfolding.h"
 #include "Residues_distances.h"
 #include "Residues_propensity.h"
 
@@ -187,7 +225,7 @@ int S_TYPE=0;        // Type of shadow interaction
 int ONEINT=0;        // Only one interaction per atom vs. residue
 float S_THR=0;       // Screening parameter
 int HNM=0;           // Calpha interactions with Hissen parameters
-int NOCOV=0;         // Covalent neighbors do not interact
+int NOCOV=1;         // Covalent neighbors do not interact
 int N_RESRES=0;      // Number of interactions retained for each residue pair
 
 // General
@@ -195,6 +233,7 @@ char REF[20];      // Reference atoms
 int N_MODES=0;
 float E_MIN=0;  // Minimum eigenvalue allowed for normal modes
 int KINETIC=1;      // Considering kinetic energy in tnm model
+int MIN_INT_MAIN=MIN_INT_DEF; // Min. numb. of interactions per degree of freedom
 
 // Input
 int L_MAX;
@@ -289,8 +328,8 @@ int getArgs(int argc, char **argv,
 	    int *PRINT_PDB, int *PRINT_MODE_SUMM,
 	    char **FILE_FORCE, int *ALLOSTERY,
 	    float *KAPPA, int *FIT_B, float *RMSD_EXP, 
-	    float *RMSD_MIN, int *NMUT, int *PRED_MUT,
-	    char *Mut_para,
+	    float *RMSD_MIN, int *NMUT,
+	    int *PRED_MUT, int *IWT, char *Mut_para,
 	    struct Para_simul *Para_simul,
 	    struct Para_confchange *Para_confchange,
 	    float *SEQID_THR,
@@ -305,7 +344,8 @@ int getArgs(int argc, char **argv,
 	    int *STRAIN, char *SITES,
 	    int *PRINT_CMAT, int *ANHARMONIC,
 	    int *PRINT_PDB_ANHARM, int *N_PDB_print,
-	    int *FOLDING, int *BINDING, int *n_apo, char *apo_chains);
+	    int *FOLDING, int *BINDING, int *UNFOLDING,
+	    int *n_apo, char *apo_chains);
 
 int Read_para(char *filename,
 	      char *file_pdb1, char *chain1,
@@ -324,8 +364,8 @@ int Read_para(char *filename,
 	      int *PRINT_PDB, int *PRINT_MODE_SUMM,
 	      char **FILE_FORCE, int *ALLOSTERY,
 	      float *KAPPA, int *FIT_B, float *RMSD_EXP,
-	      float *RMSD_MIN, int *NMUT, int *PRED_MUT,
-	      char *Mut_para,
+	      float *RMSD_MIN, int *NMUT,
+	      int *PRED_MUT, int *IWT, char *Mut_para,
 	      struct Para_simul *Para_simul,
 	      struct Para_confchange *Para_confchange,
 	      float *SEQID_THR,
@@ -339,8 +379,8 @@ int Read_para(char *filename,
 	      int *STRAIN, char *SITES,
 	      int *PRINT_CMAT, int *ANHARMONIC,
 	      int *PRINT_PDB_ANHARM, int *N_PDB_print,
-	      int *FOLDING,
-	      int *BINDING, int *n_apo, char *apo_chains);
+	      int *FOLDING, int *BINDING, int *UNFOLDING,
+	      int *n_apo, char *apo_chains);
 void help (void);
 
 /******************************* Computations ****************************/
@@ -372,7 +412,7 @@ struct interaction *Apo_interactions(int *N_int_apo,
 struct interaction *Unfold_interactions(int *N_int_unfold,
 					struct interaction *Int_list,
 					int N_int, atom *atoms);
-int N_res_1=0, N_res_2=0, N_cont_1=0, N_cont_2=0;
+int N_res_1=0, N_res_2=0, N_cont_long_1=0, N_cont_long_2=0;
 int Get_interface(int *Cart_interface,
 		  struct interaction *Int_list, int N_int,
 		  atom *atoms, int *apo_chain_num,
@@ -387,9 +427,6 @@ extern void Binding_site_dynamics(struct Normal_Mode NM, struct Reference Ref,
 				  char *nameout1,
 				  char *pdb, char *chain, int Nchain,
 				  int Nres, char *SITES);
-extern void Center_atoms(atom *atoms, int N_atoms, struct Reference Ref);
-extern void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref);
-extern int Periodic_angles(float *dphi, struct axe *axe, int n);
 
 /****************************** Main code  ********************************/
 
@@ -407,7 +444,6 @@ int main(int argc , char *argv[]){
   int OMEGA=0;      // Use also omega as degree of freedom?
                     // 0=No 1=Yes -1=Yes if Domega>D_omega_thr
   D_omega_thr=90;
-  int MIN_INT_MAIN=1; // Minimum number of interactions per degree of freedom
   int MIN_INT_SIDE=1; // Minimum number of interactions per degree of freedom
 
   // Control
@@ -492,7 +528,7 @@ int main(int argc , char *argv[]){
   int i,ia,k;
 
   // time
-  double t0=clock();
+  double t0=clock(), t_all=t0;
 
   // File names
   #define NCH 150
@@ -512,6 +548,7 @@ int main(int argc , char *argv[]){
   int BINDING=0, n_apo=1; char apo_chains[100]; 
   /**************** Unfolding entropy ***********************************/
   int FOLDING=0;
+  int UNFOLDING=0;
 
   outdir[0]='\0';
   ALL_AXES=1;
@@ -531,13 +568,13 @@ int main(int argc , char *argv[]){
 	  &S_THR, &ONEINT, &N_RESRES, &N_MODE_PRINT, outdir,
 	  &PRINT_CONFCHANGE, &PRINT_FORCE, &PRINT_PDB, &PRINT_MODE_SUMM,
 	  &FILE_FORCE, &ALLOSTERY, &KAPPA, &FIT_B, &RMSD_EXP, &RMSD_MIN,
-	  &NMUT, &PRED_MUT, Mut_para,
+	  &NMUT, &PRED_MUT, &IWT, Mut_para,
 	  &Para_simul, &Para_confchange, &SEQID_THR, parameters,
 	  &PRINT_COV_COUPLING, &PRINT_DEF_COUPLING,
 	  &PRINT_DIR_COUPLING, &PRINT_COORD_COUPLING,
 	  &PRINT_SIGMA_DIJ, &PROF_TYPE, &ALL_PAIRS, &SIGMA, &STRAIN, SITES,
 	  &PRINT_CMAT, &ANHARMONIC, &PRINT_PDB_ANHARM, &N_PDB_print,
-	  &FOLDING, &BINDING, &n_apo, apo_chains);
+	  &FOLDING, &BINDING, &UNFOLDING, &n_apo, apo_chains);
   MIN_INT_MAIN=MIN_INT_SIDE;
   if(BINDING){
     if(ALLOSTERY==0){
@@ -547,18 +584,18 @@ int main(int argc , char *argv[]){
     ALLOSTERY=1; //PRINT_DEF_COUPLING=1;
     PRINT_DIR_COUPLING=1; PRINT_COORD_COUPLING=1;
     if(FIT_B==0 && KAPPA){
-      printf("WARNING, Binding computation required without FITB, setting "
-	     "KAPPA to default\n"); KAPPA=0;
+      printf("WARNING, Binding computation must be run with default KAPPA\n"); 
+      KAPPA=0;
     }
   }
   if(FOLDING){
     if(FIT_B){
-      printf("WARNING, Unfolding computation required without FITB, setting "
-	     "it to zero\n"); FIT_B=0;
+      printf("WARNING, Unfolding computation must be run with FITB=0\n");
+      FIT_B=0;
     }
     if(KAPPA){
-      printf("WARNING, Unfolding computation required without FITB, setting "
-	     "KAPPA to default\n"); KAPPA=0;
+      printf("WARNING, Unfolding computation must be run with default KAPPA\n");
+	     KAPPA=0;
     }
   }
 
@@ -665,15 +702,14 @@ int main(int argc , char *argv[]){
 	   &natoms1, &atoms1, &na_lig1, &ligatom1, &chains1, &Nchain1,
 	   &TEMPERATURE, pdbid1, file_pdb1);
   Nchain=Nchain1;
-  // Collectivity
-  //if(COLL_THR > natoms1*0.15)COLL_THR = natoms1*0.15;
-  COLL_THR *=3;
+
   //N_TNM=naxe1;
   
 
   /*******************  Protein structure 2, if any  ********************/
   /* Read protein structure 2 */
   int Nmut=0, *Posmut=NULL; char *AAmut=NULL, *AAwt=NULL;
+  char *str_mut=NULL;
   if(file_pdb2[0]!='\0'){
   
     printf("\n************************************************\n");
@@ -698,9 +734,14 @@ int main(int argc , char *argv[]){
 		 &Nchain, SEQID_THR,
 		 chains1, Nchain1, seq1, pdbid1,
 		 chains2, Nchain2, seq2, pdbid2);
-    printf("%d mutations found: ", Nmut);
-    for(i=0; i<Nmut; i++)printf(" %c%d%c", AAwt[i], Posmut[i], AAmut[i]);
-    printf("\n");
+    str_mut=malloc(8*Nmut*sizeof(char));
+    strcpy(str_mut, "");
+    for(i=0; i<Nmut; i++){
+      char mmut[8];
+      sprintf(mmut,"%c%d%c ", AAwt[i], Posmut[i], AAmut[i]);
+      strcat(str_mut, mmut);
+    }
+    printf("%d mutations found: %s\n", Nmut, str_mut);
     if((NMUT>=0)&&(Nmut!=NMUT)){
       printf("WARNING, %d mutations found, %d expected. ", Nmut, NMUT);
       printf("If you want that the analysis is run, please ");
@@ -815,7 +856,7 @@ int main(int argc , char *argv[]){
   if(LABEL){strcat(nameout1,"_"); strcat(nameout1,fullmodel);}
   // UUU: Restore the option of the full name
 
-  sprintf(summary1, "%s.summary.dat", nameout1);   
+  sprintf(summary1, "%s.tnm.summary.dat", nameout1);   
   if(Check_make_dir(outdir)){
     char tmp2[400]; sprintf(tmp2, "%s", summary1);
     sprintf(summary1, "%s/", outdir); strcat(summary1, tmp2);
@@ -880,8 +921,16 @@ int main(int argc , char *argv[]){
     float rmsd=RMSD_CA(coord_1, coord_2, Ref1, atoms1, nres1, ali_atoms);
     printf("RMSD_CA(%s,%s)= %.2f\n", pdbid1, pdbid2, rmsd);
     if((rmsd < RMSD_MIN)||(rmsd > RMSD_MAX)){
-      printf("Too small RMSD, exiting the program ");
-      printf("allowed: %.2f-%.2f\n", RMSD_MIN, RMSD_MAX);
+      char namefile[100]; sprintf(namefile, "%s.RMSD", nameout2);
+      FILE *file_out=fopen(namefile, "w"); char out[400], tmp[80];
+      sprintf(out, "%d mutations", Nmut);
+      if(str_mut){sprintf(tmp, ": %s", str_mut); strcat(out, tmp);}
+      sprintf(out, "\nRMSD= %.3f\n"
+	      "Too small RMSD< %.2f\nExiting the program\n",rmsd, RMSD_MIN);
+      strcat(out, tmp);
+      fprintf(file_out, "%s", out);
+      fclose(file_out);
+      printf("%sRMSD printed in %s\n", out, namefile);
       exit(8);
     }
     //rmsd=rmsd_mclachlan_f(coord_1, coord_2, ali_atoms.mass, N_ali);
@@ -905,7 +954,7 @@ int main(int argc , char *argv[]){
                           ENM Computations
   ********************************************************************/
   // Consider covalent contacts in ANM but not in TNM
-  NOCOV=1; if(ANM)NOCOV=0;
+  if(ANM)NOCOV=0;
 
   /*************************  Interactions  *************************/
   struct interaction *Int_list; 
@@ -1161,6 +1210,9 @@ int main(int argc , char *argv[]){
   /********************  Collectivity of normal modes *******************/
   // Select modes based on eigenvalues and collectivity
 
+  // Collectivity
+  if(COLL_THR > natoms1*0.05)COLL_THR = natoms1*0.05;
+  COLL_THR *=3;
 
   double E_ave=0; for(ia=0; ia<NM.N; ia++)E_ave+=NM.omega2[ia]; E_ave/=NM.N;
   printf("Average omega^2 prior to norm: %.2g\n", E_ave);
@@ -1354,6 +1406,11 @@ int main(int argc , char *argv[]){
   }
   // Single protein properties
   // Mean_Cart_coll and Coll_thr_cc are computed here
+  N_int_long=0;
+  for(int i=0; i<N_int; i++){
+    if(atoms1[Int_list[i].i2].res-atoms1[Int_list[i].i1].res>2)N_int_long++;
+  }
+
   G_NM_holo=
     Print_summary(summary, nameprot, parameters, Nchain, NM,
 		  out_B1, out_B2, Tors_fluct, axe1,naxe1,nmain,nskip, natoms1,
@@ -1364,9 +1421,23 @@ int main(int argc , char *argv[]){
 		  Ref_kin.mass_coord, Cart_interface, N_Cart_inter,
 		  rigid_inter, N_rigid);
   //if(CONF_CHANGE==0){
-    Print_mode_summary(nameout1,"Modes",NM,mass_sum_sqrt,anharmonic,kappa);
-  //}
+  Print_mode_summary(nameout1,"Modes",NM,mass_sum_sqrt,anharmonic,kappa);
+    //}
+    
+  printf("************************************************\n");
+  printf("************ Unfolding simulation  *************\n");
+  printf("************************************************\n\n");
   
+  /*if(UNFOLDING){
+    Unfolding(bonds, atoms1, natoms1, axe1, naxe1, nmain,
+	      chains1, Nchain, seq1, nres1,
+	      Int_list, N_int, Int_KB, NA, K_tors_unfold,
+	      file_pdb1, chain1);
+	      }*/
+
+
+  /*********************  Conformation change  **********************/
+
   printf("************************************************\n");
   printf("************ Conformational Change *************\n");
   printf("************************************************\n\n");
@@ -1512,7 +1583,8 @@ int main(int argc , char *argv[]){
   /**********************  Predict RMSD of mutations ***********************/
   if(PRED_MUT){
     Predict_mutations(NM, KAPPA, atoms1, natoms1, naxe1, Ref_kin,
-		      Int_list, N_int, seq1, nres1, nameout1, Mut_para);
+		      Int_list, N_int, seq1, nres1, nameout1,
+		      Mut_para, PRED_MUT, IWT);
   }
 
   /**********************  Binding sites dynamics *************************/
@@ -1672,6 +1744,8 @@ int main(int argc , char *argv[]){
   }
   Clean_memory(NM, J, Hessian, naxe1, N_ref, N_Cart, N_modes, ANM);
   Empty_Ref(&Ref_kin);
+
+  printf("Total Time= %.2lf sec.\n",(clock()-t_all)/nbtops);
   return(0);
   
 }
@@ -1737,71 +1811,6 @@ void Allocate_memory(struct Normal_Mode *NM,
 
 }
 
-void Allocate_Normal_modes(struct Normal_Mode *NM,
-			   int N_modes, int N_axes, int N_Cart)
-{
-  NM->N=N_modes;
-  NM->N_kin=N_modes;
-  NM->N_axes=N_axes;
-  NM->N_Cart=N_Cart;
-  int i;
-
-  NM->select=malloc(N_modes*sizeof(int));
-  NM->omega=malloc(N_modes*sizeof(float));
-  NM->omega2=malloc(N_modes*sizeof(float));
-  NM->sigma2=malloc(N_modes*sizeof(float));
-  NM->Cart=Allocate_mat2_f(N_modes, N_Cart);
-  NM->Tors=Allocate_mat2_f(N_modes, N_axes);
-  NM->MW_Tors=Allocate_mat2_f(N_modes, N_axes);
-  NM->Cart_coll=malloc(N_modes*sizeof(float));
-  NM->Tors_coll=malloc(N_modes*sizeof(float));
-  NM->MW_Tors_coll=malloc(N_modes*sizeof(float));
-  NM->Max_dev=malloc(N_modes*sizeof(float));
-  NM->sort=malloc(N_modes*sizeof(int));
-  NM->Tors_frac=malloc(N_modes*sizeof(float));
-  for(i=0; i<N_modes; i++)NM->Tors_frac[i]=1.0;
-  NM->tors_fluct=malloc(NM->N_axes*sizeof(float));
-  NM->cart_fluct=malloc(NM->N_Cart*sizeof(float));
-  NM->confchange2=malloc(N_modes*sizeof(float));
-  NM->sigma2_anhar=malloc(N_modes*sizeof(float));
-  NM->d_KL=malloc(N_modes*sizeof(float));
-  NM->Anharmonicity=malloc(N_modes*sizeof(float));
-  NM->Anharm_struct=malloc(N_modes*sizeof(float));
-  for(i=0; i<N_modes; i++){
-    NM->Anharmonicity[i]=0; NM->Anharm_struct[i]=0;
-  }
-  NM->Max_factor=malloc(N_modes*sizeof(float));
-  NM->Max_RMSD=malloc(N_modes*sizeof(float));
-  for(i=0; i<N_modes; i++)NM->Max_RMSD[i]=-1;
-}
-
-
-void Empty_Normal_modes(struct Normal_Mode NM)
-{
-
-  // Cleaning normal modes
-  Empty_matrix_f(NM.Cart, NM.N);
-  Empty_matrix_f(NM.Tors, NM.N);
-  Empty_matrix_f(NM.MW_Tors, NM.N);
-  free(NM.omega2);
-  free(NM.omega);
-  free(NM.select); //modyves: was never freed
-  free(NM.sigma2);
-  free(NM.Cart_coll);
-  free(NM.Tors_coll);
-  free(NM.MW_Tors_coll);
-  free(NM.Tors_frac);
-  free(NM.sort);
-  free(NM.Anharmonicity);
-  free(NM.Anharm_struct);
-  free(NM.Max_factor);
-  free(NM.Max_RMSD);
-  free(NM.Max_dev); 
-  free(NM.cart_fluct);
-  free(NM.tors_fluct);
-  free(NM.confchange2);
-
-}
 
 void Clean_memory(struct Normal_Mode NM,
 		  struct Jacobian J,
@@ -1848,9 +1857,10 @@ double Print_summary(char *name_out, char *name1, char *parameters, int Nchain,
   printf("Writing %s\n", name_out);
   file_out=fopen(name_out, "w");
 
-  float r0=pow(N_res, 1/3);
-  float c=(float)N_int/(float)N_res;
-  float Surf=(3.9+4 -c)*r0*r0;
+  //float r02=pow(N_res, 2/3);
+  //float c=(float)N_int/(float)N_res;
+  //float Surf=(cont_inf -c)*r02;
+  float Surf=N_res-N_int_long/cont_inf;
 
   fprintf(file_out, "%s\n", parameters);
   fprintf(file_out, "protein               %s\n", name1);
@@ -1945,35 +1955,29 @@ double Print_thermal(int anharmonic, FILE *file_out,
 	h = 6.626 e-34 J.sec
 	k_B T at 293K = 1.381 e-23 *293= 4.05e-21 J
 	/h/k_BT = 0.260e-13 s^(-1) = 2.6 ps
-	h/k_BT = 1.637e-13 s^(-1) = 16.36 ps
-	omega_q = kBT/h/ = 0.385 ps^(-1)
-	(but K. Hinsen writes it is 6 ps^-1)...
+	h/k_BT = 1.637e-13 s^(-1) = 0.1636 ps
+	omega_q = kBT/h/ = 6.1 ps^(-1)
+	(agrees with K. Hinsen)
 
 	Our internal units of time are:
 	[t]=[m l^2/E]^(1/2)
 	Energy unit: kT= 4.05e-21 J at T=293
 	Mass unit: Atomic mass 1.66e-27 kg
 	mass/Energy: 0.4099e-6 sqrt: 0.64 e-3
-	//sqrt(k_B T/M)= sqrt(4.05e-21 J/1.66e-27 Kg)=1562 OK
+	//sqrt(k_B T/M)= sqrt(4.05e-21 J/1.66e-27 Kg)=1562
 	length unit = e-10 m
 	time unit: 0.64 e-13 = 6.4 e-12 = 6.4 ps
 	Frequency unit: 0.156 ps^(-1)
-	omega_q = 2.464 in internal units
-	1/(omega_q)^2= 0.165 in internal units
+	omega_q = 39 internal units
+	1/(omega_q)^2= 0.00065 in internal units 
 
 	Other constants:
 	Avogadro number NA= 6.02e+23
 	Gas constant R= 8.314 J/(K*mol) 
 
-	//omega in units of s^(-1): sqrt(k_B T/M)(1/Dr)
-
      */
-    //double beta_h=1.636; //0.26 e-13; 
-    //double omega_scale=1.562; //e+13 /sqrt(mass_sum)
-    //double omega_scale=0.0490; //e+13 /sqrt(mass_sum)
-    //omega_scale*=(Temp_comp/293);
-    //double beta_omega=beta_h*omega_scale, omega_q=1./beta_omega;
-    double omega_q=0.385*(Temp_comp/293)/Freq_unit;
+
+    double omega_q=6.1*(Temp_comp/293)/Freq_unit;
     double beta_omega=1./omega_q;
     double entropy=
       Compute_entropy(&Free_Ene_holo, &Free_Ene_holo_rigid,
@@ -2010,14 +2014,17 @@ double Print_thermal(int anharmonic, FILE *file_out,
 	      (entropy_unfold-entropy)/N_res);
 
 
-      float r0=pow(N_res, 1/3);
-      float c=(float)N_int/(float)N_res;
-      float Surf=(3.9+4 -c)*r0*r0;
+      //float r0=pow(N_res, 1/3);
+      //float c=(float)N_int/(float)N_res;
+      //float Surf=(cont_inf -c)*r0*r0;
+      float Surf=N_res-N_int_long/cont_inf;
 
-      float c_1=(float)N_int_unfold/(float)N_res;
-      float Surf_1=(3.9+4 -c_1)*r0*r0;
+
+      //float c_1=(float)N_int_unfold/(float)N_res;
+      //float Surf_1=(3.94 -c_1)*r0*r0;
+
       fprintf(file_out, "SASA diff unfold       %.4g\n",
-	      Surf_1-Surf);
+	      N_res-Surf);
     }
   
     if(BINDING){
@@ -2054,18 +2061,11 @@ double Print_thermal(int anharmonic, FILE *file_out,
       //	      entropy_holo-entropy);
       fprintf(file_out, "Binding free energy cont %.4g\n", Econt_bind);
 
-      int N_res=N_res_1+N_res_2, N_int=N_cont_1+N_cont_2+N_int_inter;
-      float r0=pow(N_res, 1/3);
-      float c=(float)N_int/(float)N_res;
-      float Surf=(3.9+4 -c)*r0*r0;
+      int N_int=N_cont_long_1+N_cont_long_2+N_int_inter;
+      float Surf=N_res_1+N_res_2-N_int/cont_inf;
+      float Surf_1=N_res_1-N_cont_long_1/cont_inf;
+      float Surf_2=N_res_2-N_cont_long_2/cont_inf;
 
-      float r0_1=pow(N_res_1, 1/3);
-      float c_1=(float)N_cont_1/(float)N_res_1;
-      float Surf_1=(3.9+4 -c_1)*r0_1*r0_1;
-
-      float r0_2=pow(N_res_2, 1/3);
-      float c_2=(float)N_cont_2/(float)N_res_2;
-      float Surf_2=(3.9+4 -c_2)*r0_2*r0_2;
       fprintf(file_out, "SASA difference          %.4g\n",
 	      Surf_1+Surf_2-Surf);
     }
@@ -2153,8 +2153,8 @@ int getArgs(int argc, char **argv,
 	    int *PRINT_PDB, int *PRINT_MODE_SUMM,
 	    char **FILE_FORCE, int *ALLOSTERY,
 	    float *KAPPA, int *FIT_B, float *RMSD_EXP,
-	    float *RMSD_MIN, int *NMUT, int *PRED_MUT,
-	    char *Mut_para,
+	    float *RMSD_MIN, int *NMUT,
+	    int *PRED_MUT, int *IWT, char *Mut_para,
 	    struct Para_simul *Para_simul,
 	    struct Para_confchange *Para_confchange,
 	    float *SEQID_THR,
@@ -2169,10 +2169,10 @@ int getArgs(int argc, char **argv,
 	    int *STRAIN, char *SITES,
 	    int *PRINT_CMAT, int *ANHARMONIC,
 	    int *PRINT_PDB_ANHARM, int *N_PDB_print,
-	    int *FOLDING, int *BINDING, int *n_apo, char *apo_chains)
+	    int *FOLDING, int *BINDING, int *UNFOLDING,
+	    int *n_apo, char *apo_chains)
 {
   int i; //p1=0, p2=0, out=0
-
 
   /************** Initialize ****************/
   // Input
@@ -2220,7 +2220,19 @@ int getArgs(int argc, char **argv,
   Para_simul->ANGLE=0.05;
 
   if(argc<2)help();
-  int infile=Read_para(argv[1], file_pdb1, chain1,file_pdb2, chain2,
+  printf("Reading parameters from command line\n");
+
+  char input[80]="";
+  for(i=0; i<argc; i++){
+    if(strncmp(argv[i],"-file",3)==0){
+      i++; if(i<argc){strcpy(input,argv[i]);}
+      break;
+    }
+  }
+
+  if(input[0]!='\0' && input[0]!='-'){
+    printf("Reading parameters from file %s\n", input);
+    Read_para(input, file_pdb1, chain1,file_pdb2, chain2,
 		       ANM, REF, LABEL, SIDECHAINS, OMEGA, PSI,
 		       K_OMEGA, K_PSI, K_PHI, K_CHI, K_BA, K_BL,
 		       E_MIN, COLL_THR, MIN_INT, INT_TYPE, C_THR,
@@ -2228,21 +2240,24 @@ int getArgs(int argc, char **argv,
 		       N_MODE, outdir, PRINT_CONFCHANGE, PRINT_FORCE,
 		       PRINT_PDB, PRINT_MODE_SUMM, FILE_FORCE, ALLOSTERY,
 		       KAPPA, FIT_B, RMSD_EXP, RMSD_MIN,
-		       NMUT, PRED_MUT, Mut_para,
+		       NMUT, PRED_MUT, IWT, Mut_para,
 		       Para_simul, Para_confchange, SEQID_THR,
 		       PRINT_COV_COUPLING, PRINT_DEF_COUPLING,
 		       PRINT_DIR_COUPLING, PRINT_COORD_COUPLING,
 		       PRINT_SIGMA_DIJ, PROF_TYPE, ALL_PAIRS, SIGMA,
 		       STRAIN, SITES, PRINT_CMAT, ANHARMONIC,
 		       PRINT_PDB_ANHARM, N_PDB_print,
-		       FOLDING, BINDING, n_apo, apo_chains);
-  if(infile)goto inform;
-  printf("WARNING, input file not specified or absent (%s)\n", argv[1]);
-  printf("WARNING, reading parameters from command line\n");
+		       FOLDING, BINDING, UNFOLDING, n_apo, apo_chains);
+  }else{
+    printf("WARNING, input file not specified or absent\n");
+  }
 
-  for(i=1; i<argc; i++){
+  printf("Reading parameters from command line\n");
+  for(i=0; i<argc; i++){
+    if(strncmp(argv[i],"-file",3)==0){
+      i++;
       // Proteins:
-    if (strncmp(argv[i],"-p2",3)==0){
+    }else if (strcmp(argv[i],"-p2")==0 || strcmp(argv[i],"-pdb2")==0){
       i++; if(i>=argc)continue;
       strcpy(file_pdb2,argv[i]); //p2=1;
       printf("file_pdb2=%s\n",file_pdb2);
@@ -2252,7 +2267,8 @@ int getArgs(int argc, char **argv,
 	{*chain2='*';}
       else{strcpy(chain2,argv[i]);}
       printf("chain2=%s\n",chain2);
-    }else if (strncmp(argv[i],"-p1",3)==0){
+    }else if (strcmp(argv[i],"-p1")==0 ||
+	      strcmp(argv[i],"-pdb1")==0 || strcmp(argv[i],"-pdb")==0){
       i++; if(i>=argc)continue;
       strcpy(file_pdb1,argv[i]); //p1=1;
       printf("file_pdb1=%s\n",file_pdb1);
@@ -2309,7 +2325,11 @@ int getArgs(int argc, char **argv,
       printf("%d normal modes to be printed\n",*N_MODE);
     }else if (strncmp(argv[i],"-print_pdb",10)==0){
       *PRINT_PDB=1;
-    }else if (strncmp(argv[i],"-allostery",8)==0){
+    }else if (strncmp(argv[i],"-pred_mut",9)==0){
+      *PRED_MUT=1;
+    }else if (strncmp(argv[i],"-mut_para",9)==0){
+      i++; strcpy(Mut_para, argv[i]);
+    }else if (strncmp(argv[i],"-couplings",8)==0){
       *ALLOSTERY=1;
     }else if (strncmp(argv[i],"-print_confchange",13)==0){
       *PRINT_CONFCHANGE=1;
@@ -2326,7 +2346,6 @@ int getArgs(int argc, char **argv,
     }
   }
 
- inform:
   if(*SEQID_THR > 1.0)(*SEQID_THR)/=100;
   /*if(*SEQID_THR > 1.0)
     printf("WARNING, SEQID_THR=%.2f > 1, performing Mammoth alignment\n",
@@ -2467,247 +2486,174 @@ int getArgs(int argc, char **argv,
 
 void help(void)
 {
-  fprintf(stderr, "Program %s\n", PRG);
-  fprintf(stderr, "author Ugo Bastolla <ubastolla@cbm.csic.es> ");
-  fprintf(stderr, "Centro de Biologia Molecular Severo Ochoa (CSIC-UAM)\n");
-  fprintf(stderr, "Computes normal modes of proteins with the TNM or ANM.\n");
-  fprintf(stderr, "If two structures are provided, it projects the ");
-  fprintf(stderr, "experimental conformation change over normal modes\n");
-  fprintf(stderr, "Inputs can be given either by file or by command line\n");
-  fprintf(stderr, "   USAGE:");
-  fprintf(stderr, "   %s <inputile>  or\n", PRG);
-  fprintf(stderr, "   %s -p1 <pdbfile1>", PRG);
-  fprintf(stderr, "   (reference structure for computing normal modes)\n");
-  fprintf(stderr, "   OPTIONS:\n");
-  fprintf(stderr, "       -h prints this help\n");
-  fprintf(stderr, "       -c1 <chain_id1> <all>:reading all chains, A, AB..\n");
-  fprintf(stderr, "       -p2 <pdbfile2> for conformation change\n");
-  fprintf(stderr, "       -c2 <chain_id2> <all>:reading all chains, A, AB..\n");
-  fprintf(stderr, "       -ref Reference atoms. Allowed: CA CB BB EB ALL. ");
-  fprintf(stderr, "       -omega  Use also omega angle as degree of freedom\n");
-  fprintf(stderr, "Default: %s\n", REF_DEF);
-  fprintf(stderr, "       -anm use ANM d.o.freedom (by default TNM is used)\n");
-  fprintf(stderr, "Interaction model:\n");
-  fprintf(stderr, "       -cont_type Contact type CA CB, ALL, MIN HYD or HB. ");
-  fprintf(stderr, "Default: %s\n", INT_TYPE_DEF);
-  fprintf(stderr, "        if -cont_type=HB hydrogen bonds are estimated\n");
-  fprintf(stderr, "       -cont_thr Distance threshold default %.1f\n",THR_CB);
-  fprintf(stderr, "       -expo <e> k~r^(-e) Default 0\n");
-  fprintf(stderr, "       -hnm HNM (ref=CA, cont_type=CA, e=6, covalent)\n");
-  fprintf(stderr, "       -debug  print debugging information\n");
-  fprintf(stderr, "       -outdir <output_directory>\n");
-  fprintf(stderr, "       -modes <number of modes printed>\n");
-  fprintf(stderr, "       -print_pdb    Print modes in PDB format\n");
-  fprintf(stderr, "       -print_summ   Print modes summary\n");
-  fprintf(stderr, "       -print_confchange Print conformation change\n");
-  fprintf(stderr, "       -print_force  Print force induced by c.change\n");
-  fprintf(stderr, "       -force        PDB file with force as coordinates\n");
-  fprintf(stderr, "       -simul        <Num. simulated structures>\n");
-  fprintf(stderr, "       -allostery Predict allostery\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "FORMAT of input file:\n");
-  fprintf(stderr, "####   INPUT:\n");
-  fprintf(stderr, "PDB1= /data/ortizg/databases/pdb/1usg.pdb ");
-  fprintf(stderr, "! Reference structure\n");
-  fprintf(stderr, "CH1=  A                                   ");
-  fprintf(stderr, "! Chain\n");
-  fprintf(stderr, " Conformation change (optional):\n");
-  fprintf(stderr, "PDB2= /data/ortizg/database/pdb/1usk.pdb");
-  fprintf(stderr, "! Conformation change\n");
-  fprintf(stderr, "CH2=  A                                  ");
-  fprintf(stderr, "! Chain\n");
-  fprintf(stderr, "#\n");
-  fprintf(stderr, "BINDING=  XY     ! Compute binding free energy between\n");
-  fprintf(stderr, "#                ! chains XY and rest (optional)\n");
-  fprintf(stderr, "FOLDING=  0,1    ! Compute unfolding entropy\n");
-  fprintf(stderr, "####  Model parameters (reccomended: do not change)\n");
   fprintf(stderr,
-	  "#===============================================================\n");
-  fprintf(stderr, "DOF=  TORS  (CART)		      ");
-  fprintf(stderr, "! Internal or Cartesian deg. of freed.\n");
-  fprintf(stderr, "REF=  ALL (allowed: ALL EB CB  CA BB)     ");
-  fprintf(stderr, "! Reference atoms\n");
-  fprintf(stderr, "PSI=1                              ");
-  fprintf(stderr, "! Allow PSI angles to rotate?\n");
-  fprintf(stderr, "OMEGA=0                              ");
-  fprintf(stderr, "! Allow OMEGA angles to rotate?\n");
-  fprintf(stderr, "SIDECHAIN=0                              ");
-  fprintf(stderr, "! Allow sidechain angles to rotate?\n");
+	  "Program %s\n"
+	  "author Ugo Bastolla <ubastolla@cbm.csic.es> "
+	  "Centro de Biologia Molecular Severo Ochoa (CSIC-UAM)\n"
+	  "Computes normal modes of proteins with the TNM or ANM.\n"
+	  "If two structures are provided, it projects the "
+	  "experimental conformation change over normal modes\n", PRG);
+
   fprintf(stderr,
-	  "# The model with fewer degrees of freedom is faster and more robust w.r.t. parameter values\n");
+	  "FORMAT of input file (lines with # are comments):\n"
+	  "####   INPUT:\n"
+	  "PDB1= /data/ortizg/databases/pdb/1usg.pdb ! Reference structure\n"
+	  "CH1=  A                                   ! Chain\n"
+	  "# Conformation change (optional):\n"
+	  "PDB2= /data/ortizg/database/pdb/1usk.pdb  ! Conformation change\n"
+	  "CH2=  A                                   ! Chain\n"
+	  "#\n"
+	  "BINDING=  XY     ! Compute binding free energy between\n"
+	  "#                ! chains XY and the other chains (optional)\n"
+	  "FOLDING=   0,1   ! Compute unfolding entropy\n"
+	  "UNFOLDING= 0,1   ! Perform unfolding simulation\n"
+	  "####  Model parameters (reccomended: do not change)\n"
+	  "#===============================================================\n"
+	  "DOF= TORS     ! Internal/Cartesian coordinates Allowed: TORS CART\n"
+	  "REF= ALL      ! Reference atoms allowed: ALL EB CB  CA BB  \n"
+	  "PSI=1         ! Allow PSI angles to rotate?\n"
+	  "OMEGA=0       ! Allow OMEGA angles to rotate?\n"
+	  "SIDECHAIN=0   ! Allow sidechain angles to rotate?\n"
+	  "# The model with fewer degrees of freedom is faster and"
+	  " more robust w.r.t. parameter values\n"
+	  "# More degrees of freedom introduce non collective motions"
+	  " that may worsen performances.\n"
+	  "MIN_INT=%d    ! Min. number of interactions to accept a dof\n"
+	  "E_MIN=%.1g  ! Min. eigenvalue/<evalue> of a normal mode\n"
+	  "COLL_THR=%.0f   ! Discard modes that move < COLL_THR atoms\n"
+	  "K_BL=%.2f     ! Elastic constant for bond lengths\n"
+	  "K_BA=%.2f     ! Elastic constant for bond angles\n"
+	  "K_OMEGA=%.2f  ! Elastic constant for angle omega\n"
+	  "K_PHI=%.2f    ! Elastic constant for angle phi\n"
+	  "K_PSI=%.2f    ! Elastic constant for angle psi\n"
+	  "K_CHI=%.1f    ! Elastic constant for angle Chi\n"
+	  "CONT_TYPE= MIN ! Interaction model (MIN SCR SHA SCB CB CA HB HNM)\n"
+	  "CONT_THR= %.1f  ! Threshold for contacts\n"
+	  /*"S_THR= 0.2  ! Parameter for screened or shadow interactions\n"
+	    "S_TYPE= 2   ! Type of shadow interactions\n"
+	    "# 0=angle 1=axis distance 2=S-ball-axis-distance\n"
+	    "ONEINT= 1  ! Only one interaction per residue pair?\n"
+	    "N_RESRES= 1  ! Max num interactions per residue pair\n");*/
+	  "POW= 1         ! Force constant power-law (1) or exponential (0)\n"
+	  "EXP_HESSIAN= 0 ! Force constant k~r^(-e)\n"
+	  "FIT_B= 1  ! Set force constant by fitting B factors if present?\n"
+	  "KAPPA= %.2f ! force constant when not fitting B factors\n",
+	  MIN_INT_MAIN, E_MIN, COLL_THR,
+	  K_BL, K_BA, K_OMEGA, K_PHI, K_PSI, K_CHI, THR_ALL, KAPPA);
+
+
   fprintf(stderr,
-	  "# More degrees of freedom may introduce non collective motions that worsen performances.\n");
-  fprintf(stderr, "MIN_INT=1                              ");
-  fprintf(stderr, "! Min. number of interactions to accept a dof\n");
-  fprintf(stderr, "E_MIN=0.00001                              ");
-  fprintf(stderr, "! Min. eigenvalue/<evalue> of a normal mode\n");
-  fprintf(stderr, "COLL_THR=30                                ");
-  fprintf(stderr, "! Discard modes that move < COLL_THR atoms\n");
-  fprintf(stderr, "K_BL=%.2f                                ", K_BA);
-  fprintf(stderr, "! Elastic constant for bond lengths\n");
-  fprintf(stderr, "K_BA=%.2f                                ", K_BA);
-  fprintf(stderr, "! Elastic constant for bond angles\n");
-  fprintf(stderr, "K_OMEGA=%.2f                             ", K_OMEGA);
-  fprintf(stderr, "! Elastic constant for angle omega\n");
-  fprintf(stderr, "K_PHI=%.2f                                ", K_PHI);
-  fprintf(stderr, "! Elastic constant for angle phi\n");
-  fprintf(stderr, "K_PSI=%.2f                                ", K_PSI);
-  fprintf(stderr, "! Elastic constant for angle psi\n");
-  fprintf(stderr, "K_CHI=%.1f                                ", K_CHI);
-  fprintf(stderr, "! Elastic constant for angle Chi\n");
-  fprintf(stderr, "CONT_TYPE= MIN ");
-  fprintf(stderr, "! Interaction model (MIN SCR SHA SCB CB CA HB HNM)\n");
-  fprintf(stderr, "CONT_THR=  4.5            ");
-  fprintf(stderr, "! Threshold for contacts\n");
-  /*fprintf(stderr, "S_THR= 0.2                          ");
-  fprintf(stderr, "! Parameter for screened or shadow interactions\n");
-  fprintf(stderr, "S_TYPE= 0.2                             ");
-  fprintf(stderr, "! Type of shadow interactions\n");
-  fprintf(stderr, "# 0=angle 1=axis distance 2=S-ball-axis-distance\n");
-  fprintf(stderr, "ONEINT= 1                             ");
-  fprintf(stderr, "! Only one interaction per residue pair?\n");
-  fprintf(stderr, "N_RESRES= 1                           ");
-  fprintf(stderr, "! Max num interactions per residue pair\n");*/
-  fprintf(stderr, "POW= 1                                   ");
-  fprintf(stderr, "! Force constant power-law (1) or exponential (0)\n");
-  fprintf(stderr, "EXP_HESSIAN= 0                           ");
-  fprintf(stderr, "! Force constant k~r^(-e)\n");
-  fprintf(stderr, "FIT_B= 1                            ");
-  fprintf(stderr, "! Determine force constant by fitting B factors if present? (default YES)\n");
-  fprintf(stderr, "KAPPA= 218.4                        ");
-  fprintf(stderr, "! force constant when not fitting B factors\n");
+	  "#==============================================================\n"
+	  "############### OUTPUT ################\n"
+	  "#\n### General output:\n"
+	  "LABEL= 0    ! Print Model parameters in file names\n"
+	  "PRINT_SUMM= 1      ! Print summary of results\n"
+	  "PRINT_CONT_MAT=0   ! Print Contact matrix?"
+	  "DEBUG= 0           ! Print debugging information\n"
+	  "ANHARMONIC= 0      ! Examine anharmonicity of each mode? (slow)\n"
+	  "PRINT_PDB_ANHARM=0 ! Print PDB computing the anharmonic energy?\n"
+	  "N_PDB_print= 4     ! Number of PDB printed "
+	  "for each norm.mode (if PRINT_PDB_ANHARM)\n");
+
   fprintf(stderr,
-	  "#==============================================================\n");
-  fprintf(stderr, "############### OUTPUT ################\n");
-  fprintf(stderr, "#\n### General output:\n");
-  fprintf(stderr, "ANHARMONIC= 0  ");
-  fprintf(stderr, "! Examine anharmonicity of each mode?\n");
-  fprintf(stderr, "PRINT_PDB_ANHARM=0   ");
-  fprintf(stderr, "! Print PDB while computing the anharmonic energy?\n");
-  fprintf(stderr, "N_PDB_print= 4        ! Number of PDB printed ");
-  fprintf(stderr, "for each norm.mode (if PRINT_PDB_ANHARM)\n");
-  fprintf(stderr, "LABEL= 0 or 1			    ");
-  fprintf(stderr, "! Print Mod. par. in file names\n");
-  fprintf(stderr, "PRINT_CONT_MAT=0                         ");
-  fprintf(stderr, "! Print Contact matrix?");
-  fprintf(stderr, "PRINT_SUMM= 1                            ");
-  fprintf(stderr, "! Print summary of results\n");
-  fprintf(stderr, "DEBUG= 0                                 ");
-  fprintf(stderr, "! Print debugging information\n");
+	  "#\n### Normal modes:\n"
+	  "NMODES= 5          ! Number of printed normal modes\n"
+	  "PRINT_PDB= 0       ! Print modes as PDB files?\n"
+	  "AMPLITUDE=1.0      ! Max. amplitude of printed modes"
+	  " w.r.t. thermal fluctuations\n"
+	  "PDB_STEP=0.2       ! Minimum RMSD between printed PDBs\n"
+	  "E_THR=5.0          ! Maximum energy of printed structures\n"
+	  "D_REP=2.5          ! Maximum distance for computing repulsion ene\n"
+	  "#\n#### Ensembles of alternative structures\n"
+	  "SIMUL=20	      ! Numb. simulated structures for each amplitude\n"
+	  "AMPL_MIN=1.0       ! Minimum amplitude of simulated structures\n"
+	  "AMPL_MAX=8.0       ! Maximum amplitude of simulated structures\n"
+	  "AMPL_FACT=2.0      ! Factor multiplying conecutive amplitudes\n"
+	  "#\n###  Analysis of conformation change\n"
+	  "RMSD_MIN= 0.5      ! Min. RMSD for analyzing conformation change\n"
+	  "PRINT_CHANGE= 0    ! Print conformation change as PDB?\n"
+	  "RMSD_THR= 0.2      ! Do not analyze modes that move < RMSD_THR\n"
+	  "STEP_MAX= 0.5      ! Max. step in simulated confchange\n"
+	  "STEP_MIN= 0.001    ! Smallest step in simulated confchange\n"
+	  "NSTEPS= 100        ! Number of steps in simulated confchange\n"
+	  "ANGLE= 0.1         ! Angular step in confchange (radiants)\n"
+	  "PRINT_FORCE= 0     ! Print linear resp. force that produces"
+	  " the confchange\n"
+	  "# FILE_FORCE=     ! Input file with force, compute deformation\n"
+	  "#\n#### Prediction and analysis of mutational effects\n"
+	  "PRED_MUT=0         ! Predict RMSD of all possible mutations?\n"
+	  "MUT_PARA=Mutation_para.in  ! File with mutation parameters\n"
+	  "NMUT= -2           ! Analyze mutation as conf.change\n"
+	  "# NMUT>0: analyze if numb.mutations=NMUT NMUT=-1: Analyze always"
+	  " NMUT=-2: Do not analyze\n");
+  fprintf(stderr,
+	  "#\n### Dynamical couplings\n"
+	  "ALLOSTERY=0    ! Compute dynamical couplings\n"
+	  "ALL_PAIRS=0    ! Print couplings for all pairs? (1=YES)\n"
+	  "SIGMA=1.0      ! If ALL_PAIRS=0, print if |coupling|>SIGMA*Std.dev\n"
+	  "PRINT_COV_COUPLING=0    ! Print covariance couplings\n"
+	  "# Output file: <>_covariance_coupling.dat\n"
+	  "PRINT_DIR_COUPLING= 0   ! Print directionality couplings\n"
+	  "# The coupling Dir_ij is the Boltzmann average of the scalar\n"
+	  "# product of the direction of motion of residues i and j. If it is\n"
+	  "# positive the two residues tend to move in similar directions.\n"
+	  "# Output files: <>_directionality_coupling.dat and\n"
+	  "# <>_directionality_coupling_neg.dat (<0)\n"
+	  "PRINT_COORD_COUPLING=0  ! Print coordination couplings\n"
+	  "# Output file: <>_coordination_coupling.dat\n"
+	  "# The coupling Coord_ij is the Boltzmann average of the squared\n"
+	  "# fluctuations of the distance d_ij with respect to the equilibrium value.\n"
+	  "# If it is small the two residues maintain an almost fixed distance\n"
+	  "# during their dynamics.\n"
+	  "PRINT_DEF_COUPLING=0    ! Print deformation couplings\n"
+	  "# Output file: <>_deformation_coupling.dat\n"
+	  "# The coupling Def_ij is the deformation produced on site j by an\n"
+	  "# unitary force applied at j in the direction that maximizes the"
+	  " deformation.\n"
+	  "PROF_TYPE= C   ! Type of profile of the couplings p_i({C_kl})\n"
+	  "# A=average E=effective connectivity P=principal eigenvector\n"
+	  "PRINT_SIGMA_DIJ=0   ! Print variance of the distance between CA atoms\n"
+	  "# (it is the square of the coordination coupling)\n"
+	  "# Output file: <>_interatomic_distance_variance.dat"
+	  "SITES=leut_sites.in	! Input file with a binding site\n"
+	  "# format: SITE AA (3 letter) CHAIN RESNUM (PDB)\n"
+	  "# If not specified, read from the SITE record in the PDB file.\n"
+	  "# The program computes the mean coupling of pairs of residues"
+	  " in each binding site\n");
 
-  fprintf(stderr, "#\n### Normal modes:\n");
-  fprintf(stderr, "NMODES= 5                                ");
-  fprintf(stderr, "! Number of modes to print\n");
-  fprintf(stderr, "PRINT_PDB= 0                             ");
-  fprintf(stderr, "! Print modes as PDB files?\n");
- fprintf(stderr, "AMPLITUDE=1.0             ! Amplitude of printed modes w.r.t. thermal fluctuations\n");
-  fprintf(stderr, "PDB_STEP=0.5              ! Minimum Rmsd between structures printed as PDB\n");
-  fprintf(stderr, "E_THR=5.0                 ! Maximum allowed energy of generated structures\n");
-  fprintf(stderr, "D_REP=2.5                 ! Maximum distance for computing repulsion energy\n");
+  fprintf(stderr,
+	  "#\n#\n"
+	  "Inputs can be given both by file and by command line\n"
+	  "   USAGE:"
+	  "   %s -file <input_file>  or\n"
+	  "   %s -pdb1 <pdbfile1>   (reference pdb structure)\n"
+	  "   OPTIONS:\n"
+	  "       -h prints this help\n"
+	  "       -c1 <chain_id1>  all:read all chains, A, AB..\n"
+	  "       -pdb2 <pdbfile2> for conformation change\n"
+	  "       -c2 <chain_id2>  all:read all chains, A, AB..\n"
+	  "       -ref Reference atoms Allowed: ALL (default), CA CB BB EB\n"
+	  "       -omega  Use also omega angle as degree of freedom\n"
+	  "       -anm use ANM d.o.freedom (by default TNM is used)\n"
+	  "       -cont_type Interaction model: MIN (default) CA CB ALL HYD HB\n"
+	  "       -cont_thr Distance threshold default: %.1f\n"
+	  "       -expo <e> k~r^(-e) Default: %.0f\n"
+	  "       -print_pdb  Print modes in PDB format\n"
+	  "       -modes <number of printed modes\n"
+	  "       -pred_mut  Print RMSD and DE produced by all possible mutations\n"
+	  "       -mut_para <file with parameters of mutation model>\n"
+	  "       -print_confchange Print conformation change as PDB\n"
+	  "       -print_force  Print force producing the c.change\n"
+	  "       -force     Input PDB file with force as coordinates\n"
+	  "       -couplings Compute dynamical couplings\n"
+	  "       -simul    <Num. simulated structures>\n"
+	  "       -hnm HNM (ref=CA, cont_type=CA, e=6, covalent)\n"
+	  "       -debug  print debugging information\n"
+	  "\n", PRG, PRG, THR_ALL, EXP_HESSIAN);
 
- fprintf(stderr, "#\n#### Ensembles of alternative structures\n");
- 
-  fprintf(stderr, "SIMUL=20		     ! Number of simulated structures\n");
-  fprintf(stderr, "AMPL_MIN=1.0              ! Minimum amplitude of simulated structures\n");
-  fprintf(stderr, "AMPL_MAX=8.0              ! Maximum amplitude of simulated structures\n");
-  fprintf(stderr, "AMPL_FACT=2.0             ! Factor multiplying conecutive amplitudes\n");
-
-  fprintf(stderr, "#\n###  Analysis of conformation change\n");
-  fprintf(stderr, "RMSD_MIN= 0.5                            ");
-  fprintf(stderr, "! Min. RMSD for analyzing conformation change\n");
-  fprintf(stderr, "RMSD_THR= 0.2                            ");
-  fprintf(stderr, "! Do not analyze modes that move < RMSD_THR\n");
-  fprintf(stderr, "PRINT_CHANGE= 0                          ");
-  fprintf(stderr, "! Print conformation change?\n");
-  fprintf(stderr, "STEP_MAX= 0.5                            ");
-  fprintf(stderr, "! Max. step in confchange\n");
-  fprintf(stderr, "STEP_MIN= 0.001                          ");
-  fprintf(stderr, "! Smallest step in confchange\n");
-  fprintf(stderr, "NSTEPS= 100                              ");
-  fprintf(stderr, "! Number of steps in confchange\n");
-  fprintf(stderr, "ANGLE= 0.1                               ");
-  fprintf(stderr, "! Angular step in confchange\n");
-  fprintf(stderr, "PRINT_FORCE= 0                           ");
-  fprintf(stderr, "! Print force from linear response\n");
-  fprintf(stderr, "#FILE_FORCE= \n");
-  fprintf(stderr, "! File with force, compute deformation\n");
-
-  fprintf(stderr, "#\n#### Prediction and analysis of mutational effects\n");
-  fprintf(stderr, "PRED_MUT=0                           ");
-  fprintf(stderr, "! Predict RMSD of all possible mutations?\n");
-  fprintf(stderr, "MUT_PARA=Mutation_para.in           ");
-  fprintf(stderr, "! File with mutation parameters\n");
-  fprintf(stderr, "NMUT= -2                            ");
-  fprintf(stderr, "! Analyze conf.change as mutation if number of mut==NMUT\n");
-  fprintf(stderr, "                                    ");
-  fprintf(stderr, "! NMUT=-1: Analyze always NMUT=-2: Mutation not analyzed\n");
-
-  fprintf(stderr, "#\n### Dynamical couplings\n");
-  fprintf(stderr, "ALLOSTERY=0                              ");
-  fprintf(stderr, "! Compute dynamical couplings\n");
-  fprintf(stderr, "ALL_PAIRS=0         ! Print couplings for all pairs? (1=YES)\n");
-  fprintf(stderr, "SIGMA=1.0           ! If ALL_PAIRS=0, couplings are printed\n");
-  fprintf(stderr, "# only for pairs with Coupling_ij > SIGMA*Std.dev\n");
-  fprintf(stderr, "PROF_TYPE= C        ! Type of profile of the couplings p_i({C_kl})\n");
-  fprintf(stderr, "# A=average E=effective connectivity P=principal eigenvector\n");
-  fprintf(stderr, "PRINT_COV_COUPLING=0                    ");
-  fprintf(stderr, "! Print covariance couplings\n");
-  fprintf(stderr, "PRINT_DEF_COUPLING=0                    ");
-  fprintf(stderr, "! Print deformation couplings\n");
-  fprintf(stderr, "# Allosteric coupling A_ij is the deformations produced on site j by an\n");
-  fprintf(stderr, "# unitary force applied in j in the direction that maximizes the deformation.\n");
-  fprintf(stderr, "# The coupling is output only when it is > SIGMA standard deviations above the mean value.\n");
-  fprintf(stderr, "# Output file: <>_deformation_coupling.dat\n");
-  fprintf(stderr, "PRINT_DIR_COUPLING= 0	! Print directionality couplings\n");
-  fprintf(stderr, "# Directionality coupling D_ij is the Boltzmann average of the scalar\n");
-  fprintf(stderr, "# product of the direction of motion of the residues i and j. If it is\n");
-  fprintf(stderr, "# positive the two residues tend to move in the same direction.\n");
-  fprintf(stderr, "# The coupling is output only when it is > SIGMA standard deviations above\n");
-  fprintf(stderr, "# Output file: <>_directionality_coupling.dat and\n");
-  fprintf(stderr, "# <>_directionality_coupling_neg.dat (< -SIGMA standard deviations)\n");
-  fprintf(stderr, "# It is output in the format of a N*N matrix for all pairs of sites\n");
-  fprintf(stderr, "# Output file: <>_directionality_matrix.dat\n");
-  fprintf(stderr, "PRINT_COORD_COUPLING=0			  ! Print coordination couplings\n");
-  fprintf(stderr, "# Coordination coupling C_ij is the Boltzmann average of the squared\n");
-  fprintf(stderr, "# fluctuations of the distance d_ij with respect to the equilibrium value.\n");
-  fprintf(stderr, "# If it is small the two residues maintain an almost fixed distance during\n");
-  fprintf(stderr, "# their dynamics.\n");
-  fprintf(stderr, "# The coupling is output only when it is > SIGMA standard deviations above\n");
-  fprintf(stderr, "# the mean value.\n");
-  fprintf(stderr, "# Output file: <>_coordination_coupling.dat\n");
-  fprintf(stderr, "PRINT_SIGMA_DIJ=0   ! Print variance of interatomic distance (only CA atoms)\n");
-  fprintf(stderr, "# Note that it is the square of the coordination coupling\n");
-  fprintf(stderr, "# Output file: <>_interatomic_distance_variance.dat");
-  fprintf(stderr, "SITES=leut_sites.in	! File where an active site is read.\n");
-  fprintf(stderr, "# If not specified, read from the SITE record in the PDB file.\n");
-  fprintf(stderr, "# format: SITE AA (3 letter) CHAIN RESNUM (PDB)\n");
-  fprintf(stderr, "# The mean coupling of pairs of residues in the active site is computed.\n");
-  fprintf(stderr, "#\n");
   exit(1);
 }
 
-void GetPdbId(char *pdb_file_in, char *pdbid){
-     /* This subroutine pretends to get the
-        PDB id from a pdb file name, and ressembles
-	quite a lot my "old-and-dirty-Perl" days */
-
-  int start=0, end=0, i,j; //end2=0
-
-  for(i=strlen(pdb_file_in)-1;i>=0;i--){
-    if (pdb_file_in[i]=='.'){
-      end=i-1;
-    }else if (pdb_file_in[i]=='/'){
-      start=i+1; //end2=i-1;
-      break;
-    }
-  }
-  j=0;
-  for (i=start;i<=end;i++){
-    pdbid[j]=pdb_file_in[i];
-    j++;
-  }
-  pdbid[j]='\0';
-}
 
 void Copy_vector(float *xx, float *yy, int n){
   int i; float *x=xx, *y=yy;
@@ -2740,7 +2686,8 @@ int Read_para(char *filename,
 	      int *PRINT_PDB, int *PRINT_MODE_SUMM,
 	      char **FILE_FORCE, int *ALLOSTERY,
 	      float *KAPPA, int *FIT_B, float *RMSD_EXP,
-	      float *RMSD_MIN, int *NMUT, int *PRED_MUT, char *Mut_para,
+	      float *RMSD_MIN, int *NMUT,
+	      int *PRED_MUT, int *IWT, char *Mut_para,
 	      struct Para_simul *Para_simul,
 	      struct Para_confchange *Para_confchange,
 	      float *SEQID_THR,
@@ -2753,14 +2700,15 @@ int Read_para(char *filename,
 	      int *ALL_PAIRS, float *SIGMA,
 	      int *STRAIN, char *SITES, int *PRINT_CMAT,
 	      int *ANHARMONIC, int *PRINT_PDB_ANHARM, int *N_PDB_print,
-	      int *FOLDING, int *BINDING, int *n_apo, char *apo_chains)
+	      int *FOLDING, int *BINDING, int *UNFOLDING,
+	      int *n_apo, char *apo_chains)
 {
   FILE *file_in=fopen(filename, "r");
   if(file_in==NULL){
     printf("ERROR, TNM input file %s not found\n", filename); 
     return(0);
   }
-  char string[1000], dumm[80];
+  char string[1000], dumm[80]; int itmp;
   printf("Reading parameters in %s\n", filename);
   while(fgets(string, sizeof(string), file_in)!=NULL){
     if(string[0]=='#')continue;
@@ -2870,6 +2818,13 @@ int Read_para(char *filename,
       sscanf(string+5, "%d",  NMUT);
     }else if(strncmp(string, "PRED_MUT", 8)==0){
       sscanf(string+9, "%d",  PRED_MUT);
+    }else if(strncmp(string, "IWT", 3)==0){
+      sscanf(string+4, "%d",  &itmp);
+      if(itmp<0 || itmp >=20) {
+	printf("WARNING, IWT=%d not allowed, using default %d\n",itmp,*IWT);
+      }else{
+	*IWT=itmp;
+      }
     }else if(strncmp(string, "MUT_PARA", 8)==0){
       sscanf(string+9, "%s",  Mut_para);
     }else if(strncmp(string, "RMSD_THR", 8)==0){
@@ -2949,6 +2904,8 @@ int Read_para(char *filename,
 
     }else if(strncmp(string, "FOLDING", 7)==0){
       sscanf(string+8, "%d", FOLDING);
+    }else if(strncmp(string, "UNFOLDING",9)==0){
+      sscanf(string+10, "%d", UNFOLDING);
     }else if(strncmp(string, "BINDING", 7)==0){
       *n_apo=0; char *s=string+8;
       while(*s!='\n' && *s!='!'){
@@ -3011,9 +2968,9 @@ void Get_modes_tors(struct Normal_Mode NM, int N_modes,
   printf("Hessian diagonalization. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
   t0=clock();
 
-  // UGO: Rescale omega^2 with mass 09/08/2022
-  float omega_norm=Ref_kin.mass_sum/Ref_kin.N_ref;
-  for(int i=0; i<N_modes; i++)NM.omega2[i]*=omega_norm;
+  // UGO: Rescale omega^2 with mass 09/08/2022 It may induce mistakes
+  //float omega_norm=Ref_kin.mass_sum/Ref_kin.N_ref;
+  //for(int i=0; i<N_modes; i++)NM.omega2[i]*=omega_norm;
   
   // Allocate only relevant modes
   NM.N_relevant=NM.N;
@@ -3124,7 +3081,7 @@ int Get_interface(int *Cart_interface,
 		  int n_apo, struct chain *chains, int Nchain,
 		  int *atom_num, int N_ref, int natoms, int nres)
 {
-  N_res_1=0; N_res_2=0; N_cont_1=0; N_cont_2=0;
+  N_res_1=0; N_res_2=0; N_cont_long_1=0; N_cont_long_2=0;
 
   int atom_ref[natoms], i;
   for(i=0; i<natoms; i++)atom_ref[i]=-1;
@@ -3141,9 +3098,9 @@ int Get_interface(int *Cart_interface,
       int apo1=Belong_to_apo(atoms[tmp->i1].chain, apo_chain_num, n_apo);
       int apo2=Belong_to_apo(atoms[tmp->i2].chain, apo_chain_num, n_apo);
       if(apo1 && apo2){
-	N_cont_1++;
+	if(atoms[tmp->i2].res-atoms[tmp->i1].res>2)N_cont_long_1++;
       }else if(apo1==0 && apo2==0){
-	N_cont_2++;
+	if(atoms[tmp->i2].res-atoms[tmp->i1].res>2)N_cont_long_2++;
       }else if((apo1 && apo2==0)||(apo1==0 && apo2)){
 	res_inter[atoms[tmp->i1].res]=1;
 	res_inter[atoms[tmp->i2].res]=1;

@@ -415,7 +415,7 @@ static void center_of_mass(double *ret, float *v, int N, float *mass)
   }
   for(i=0;i<3;i++)ret[i]/= norm;
 }
-static void TranslateVector(float *v, double *transl, int N)
+static void TranslateVector(float *v, double transl[3], int N)
 {
   int i,m=0;
   for (i=0;i<N;i++){

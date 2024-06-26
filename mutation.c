@@ -45,7 +45,7 @@ int amax=3;
 void Read_pred_para(char *name_in);
 void Normalize_parameters();
 float Pred_mut_str(float C_size, float C_stab, float C_dist,
-		   double *DE, float *MSD_mut, float *MSD_cross,
+		   float *DE, float *MSD_mut, float *MSD_cross,
 		   float *A_mut, float *A_nomut, float *A_cross, float *offset,
 		   float *pred_mut_3, float *pred_mut_2,
 		   float *pred_mut_tot_2,
@@ -90,7 +90,7 @@ int Extract_reference_atoms(int *resatom, atom *atoms, int natoms,
 
 void Compute_mut_def(float *pred_mut_Cart, int N_Cart,
 		     float *pred_mut_Tors, int N_axes,
-		     double *DE, float *Force_coeff, float *Force,
+		     float *DE, float *Force_coeff, float *Force,
 		     struct Normal_Mode NM, float *sigma2, float mass);
 
 float *Convert_to_tors(float *Cart, int N3, float **J_ar, int N_axes);
@@ -100,7 +100,7 @@ float Cosine(float *scale, float *xx, float *yy, int n);
 extern float Fit_2(float *Y, float *X0, float *X1, int N,
 		   float *A0, float *A1, float *b, int first);
 extern float Fit_1(float *Y, float *X, int N, float *A, float *b);
-
+extern void f_sort(float d[], int n, int *i_rank);
 extern void f_Diagonalize(int N, float **MATRIX, float *eigen_values,
 			  float **eigen_vector, int SIGN);
 
@@ -121,7 +121,6 @@ int Mutation(float *mut_Tors_out, int N_axes, float *mut_CC_out,
     printf("Sorry, no mutation is present to predict its effect\n");
     return(0);
   }
-
 
   // Parameters of the prediction
   /**************************************************************************
@@ -245,13 +244,17 @@ int Mutation(float *mut_Tors_out, int N_axes, float *mut_CC_out,
     //for(int k=0; k<3; k++){exc_3[j]=str_diff_3[j]/B1[i]; j++;}
   }
 
-  int B_EVEC=0;
   int N3=3*Na;
   float *B3[3];
   for(j=0; j<3; j++){
     B3[j]=malloc(N3*sizeof(float));
     for(i=0; i<N3; i++)B3[j][i]=0;
   }
+  int B_EVEC=0;
+  /* B_EVEC=1: amax=3, B3[3][n] B3_ji is the j Cartesian component of the
+  // eigenvector of sum_a s^2_a va_ik va_il for the i atom
+  // B_EVEC=0: amax=1, B3[1][n] B3_0i = sum_a s_a va_i
+  */
   if(B_EVEC){
     amax=3;
     float *B_mat[3]; for(i=0; i<3; i++)B_mat[i]=malloc(3*sizeof(float));
@@ -350,7 +353,8 @@ int Mutation(float *mut_Tors_out, int N_axes, float *mut_CC_out,
 
   // Exponent of the force for computation
   Exp=(1.+EXP_FORCE)/2;
-  REXP=pow(RC, EXP_FORCE); scale_C=KAPPA*REXP;
+  REXP=pow(RC, EXP_FORCE);
+  scale_C=KAPPA*REXP;
 
   // prediction based on combination of size, stability, distance 
   // Coefficients for the computation of the force
@@ -376,7 +380,7 @@ int Mutation(float *mut_Tors_out, int N_axes, float *mut_CC_out,
 
   // Loop on predictions
   int N_force=1; if(OPT_COEFF)N_force++;
-  float cc_opt=0; double DE=0;
+  float cc_opt=0; float DE=0;
   for(int iforce=0; iforce<N_force; iforce++){ 
     ini_fit=1; 
     // Compute the force due to the mutation
@@ -605,7 +609,7 @@ int Mutation(float *mut_Tors_out, int N_axes, float *mut_CC_out,
 }
 
 float Pred_mut_str(float C_size, float C_stab, float C_dist,
-		   double *DE, float *MSD_mut, float *MSD_cross,
+		   float *DE, float *MSD_mut, float *MSD_cross,
 		   float *A_mut, float *A_nomut, float *A_cross, float *offset,
 		   float *pred_mut_3, float *pred_mut_2, float *pred_mut_tot_2,
 		   int Na, int *n_cont_mut, float *Force, float *Force_coeff,
@@ -650,15 +654,20 @@ float Pred_mut_str(float C_size, float C_stab, float C_dist,
   //for(i=0; i<20; i++){printf("%.3g ",pred_mut_2[i]);} printf("\n");
   //printf("Predicted MSD: %.4g\n", *MSD_mut);
 
-  *MSD_cross=0; 
+  *MSD_cross=0;
+  // No mutant structure is present for computing observed differences
   if((str_diff_3==NULL)||(str_diff_2==NULL))return(0);
 
 
   // pred_mut_cross[i]= 2 pred_mut[i] X B3[i]
+  // B3_0i = sum_a s_a va_i (B_EVEC==0)
+  // Does it make sense? va_i and -va_i are equivalent,
+  // the dot product should be zero... 
   float pred_mut_cross[Na];
   for(i=0; i<Na; i++){pred_mut_cross[i]=0;}
-  for(int a=0; a<amax; a++){
-    float *bb=B3[a]; str=pred_mut_3; 
+  for(int a=0; a<amax; a++){ // amax=1 (B_EVEC==0) or 3 (B_EVEC==1)
+    float *bb=B3[a]; str=pred_mut_3;
+    // Scalar product pred_mut_3*B3
     for(i=0; i<Na; i++){
       double d_cross=0;
       for(j=0; j<3; j++){d_cross+=(*str)*(*bb); str++; bb++;}
@@ -672,51 +681,47 @@ float Pred_mut_str(float C_size, float C_stab, float C_dist,
   }
   *MSD_cross/=Na;
 
+  // Fit observed deformation profile squared str_diff_2[i] 
   float score;
-  /*if(0){
-    score=Fit_2(str_diff_2,pred_mut_2,B_pred, Na,A_mut,A_nomut,offset,ini_fit);
-    }else{*/
-  {
-    int Npar=3;
-    float D_out[Npar], Y_pred[Na], *X[Na];
-    for(i=0; i<Na; i++){
-      X[i]=malloc(Npar*sizeof(float));
-      X[i][0]=pred_mut_2[i];
-      X[i][1]=B_pred[i];
-      X[i][2]=pred_mut_cross[i];
-    }
-    struct ridge_fit fit; fit.A=malloc(Npar*sizeof(float)); char type;
-    if(ini_fit){type='C';} // Specific-heat fit
-    else{type='L'; fit.Lambda=Lambda_RRR;}
+  int Npar=3;
+  float D_out[Npar], Y_pred[Na], *X[Na];
+  for(i=0; i<Na; i++){
+    X[i]=malloc(Npar*sizeof(float));
+    X[i][0]=pred_mut_2[i];
+    X[i][1]=B_pred[i];
+    X[i][2]=pred_mut_cross[i];
+  }
+
+  struct ridge_fit fit; fit.A=malloc(Npar*sizeof(float)); char type;
+  if(ini_fit){type='C';} // Specific-heat fit
+  else{type='L'; fit.Lambda=Lambda_RRR;}
+  score=Ridge_regression(&fit, Y_pred, D_out, "ridge_regression",
+			 X, str_diff_2, Na, Npar, type);
+  printf("RRR3: A_mut= %.3g A_nomut= %.3g A_cross= %.3g\n",
+	 fit.A[0], fit.A[1], fit.A[2]);
+
+  if(fit.A[0]<=0 || fit.A[1]<=0){ //*A_mut<=0 *A_nomut<0
+    // Fit without A_cross
+    fit.A[2]=0; Npar=2;
     score=Ridge_regression(&fit, Y_pred, D_out, "ridge_regression",
 			   X, str_diff_2, Na, Npar, type);
-    printf("RRR3: A_mut= %.3g A_nomut= %.3g A_cross= %.3g\n",
+    printf("RRR2: A_mut= %.3g A_nomut= %.3g A_cross= %.3g\n",
 	   fit.A[0], fit.A[1], fit.A[2]);
-
-    if(fit.A[0]<=0 || fit.A[1]<=0){ //*A_mut<=0 *A_nomut<0
-      // Fit without A_cross
-      fit.A[2]=0; Npar=2;
-      score=Ridge_regression(&fit, Y_pred, D_out, "ridge_regression",
-			     X, str_diff_2, Na, Npar, type);
-      printf("RRR2: A_mut= %.3g A_nomut= %.3g A_cross= %.3g\n",
-	     fit.A[0], fit.A[1], fit.A[2]);
-    }
-
-    Lambda_RRR=fit.Lambda;
-    *A_mut=fit.A[0];
-    *A_nomut=fit.A[1];
-    *A_cross=fit.A[2];
-    free(fit.A);
-
-    *offset=0;
-    for(i=0; i<Na; i++){
-      (*offset)+=str_diff_2[i]-Y_pred[i];
-      pred_mut_tot_2[i]=Y_pred[i];
-      free(X[i]);
-    }
-    (*offset)/=Na;
-
   }
+
+  Lambda_RRR=fit.Lambda;
+  *A_mut=fit.A[0];
+  *A_nomut=fit.A[1];
+  *A_cross=fit.A[2];
+  *offset=0;
+  for(i=0; i<Na; i++){
+    (*offset)+=str_diff_2[i]-Y_pred[i];
+    pred_mut_tot_2[i]=Y_pred[i];
+    free(X[i]);
+  }
+  (*offset)/=Na;
+  free(fit.A);
+
   ini_fit=0;
 
   if(*A_nomut<=0){
@@ -832,7 +837,7 @@ int Mutation_force(float *Force, int N_Cart,
 
 void Compute_mut_def(float *pred_mut_Cart, int N_Cart,
 		     float *pred_mut_Tors, int N_axes,
-		     double *DE, float *Force_coeff, float *Force,
+		     float *DE, float *Force_coeff, float *Force,
 		     struct Normal_Mode NM, float *sigma2, float mass)
 {
   int a, i;
@@ -842,7 +847,7 @@ void Compute_mut_def(float *pred_mut_Cart, int N_Cart,
   /*double F=0;
   for(i=0; i<N_Cart; i++){F+=Force[i]*Force[i];}
   printf("RMS of mutational force: %.3f\n", sqrt(3*F/N_Cart)); */
-  *DE=0;
+  double DE_tmp=0;
 
   // Compute predicted deformation of kinetic atoms (Cart)
   for(a=0; a<NM.N; a++){
@@ -854,7 +859,7 @@ void Compute_mut_def(float *pred_mut_Cart, int N_Cart,
     for(i=0; i<N_Cart; i++){xf+=(*x)*(*f); x++; f++;}
     Force_coeff[a]=xf;
     //(*DE)+=xf*xf/sigma2[a];
-    (*DE)+=xf*xf*sigma2[a]; // OK
+    DE_tmp+=xf*xf*sigma2[a]; // OK
     xf*=sigma2[a];
     float *m=pred_mut_Cart; x=NM.Cart[a];
     for(i=0; i<N_Cart; i++){
@@ -865,6 +870,7 @@ void Compute_mut_def(float *pred_mut_Cart, int N_Cart,
       (*m)+=(*x)*xf; x++; m++;
     }
   }
+  *DE=DE_tmp;
 }
 
 int Mainchain(char *atom_name){
@@ -995,7 +1001,7 @@ void Read_pred_para(char *name_in){
     return;
   }
   char string[100];
-  printf("Reading weights in %s: ", name_in);
+  printf("Reading weights of mutation model in %s: ", name_in);
   while(fgets(string, sizeof(string), file_in)!=NULL){
     if(string[0]=='#')continue;
     if(strncmp(string, "EXP_FORCE", 9)==0){
@@ -1022,7 +1028,7 @@ void Read_pred_para(char *name_in){
       printf("WARNING, unknown record %s\n", string);
     }
   }
-  printf(" %.3g %.3g %.3g\n", C_SIZE, C_DIST, C_STAB);
+  printf("size,dist,stab= %.3g %.3g %.3g\n", C_SIZE, C_DIST, C_STAB);
   fclose(file_in);
 }
 
@@ -1042,7 +1048,7 @@ float Optimize_coeff(float *C_size_opt, float *C_stab_opt, float *C_dist_opt,
 		     float **B3, float *B_pred,
 		     float *str_diff_3, float *str_diff_2)
 {
-  float y_max=-1000; double DE=0;
+  float y_max=-1000; float DE=0;
   ini_fit=1;
 
   // Initialize parameters
@@ -1167,10 +1173,10 @@ void Normalize_parameters()
     D_Res_norm[a][20]=D_gap;
     D_Res_norm[20][a]=D_gap;
   }
-  printf("Parameters of mutation model (ave, s.d.):\n");
-  printf("Econt: %.3g %.3g\n", E1, E2);
-  printf("D_Res: %.3g %.3g\n", D1, D2);
-  printf("natom: %.3g %.3g\n\n", na1, na2);
+  printf("Parameters of mutation model type, ave, s.d.:\n");
+  printf("SIZE natom: %.3g %.3g\n\n", na1, na2);
+  printf("DIST D_Res: %.3g %.3g\n", D1, D2);
+  printf("STAB Econt: %.3g %.3g\n", E1, E2);
 }
 
 void Predict_mutations(struct Normal_Mode NM, float KAPPA,
@@ -1178,8 +1184,12 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
 		       int N_axes, struct Reference Ref_kin, 
 		       struct interaction *Int_list, int N_int,
 		       struct residue *seq, int Nres,
-		       char *nameout1, char *Mut_para)
+		       char *nameout1, char *Mut_para,
+		       int PRED_MUT, int IWT)
 {
+  int i_rank[20]; // For RMSD[a_wt] //IWT=3, 
+  int ALLPAIR=0; if(PRED_MUT==2)ALLPAIR=1;
+
   // Exponent of the force for computation
   Read_pred_para(Mut_para);
   Exp=(1.+EXP_FORCE)/2;
@@ -1208,41 +1218,67 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
   Get_contact_list(&nc, &clist, &cnum, Nres, atoms, Int_list, N_int);
 
   // Output files
-  char head[400],tmp[50];
-  sprintf(head, "# Mutation par.: C_SIZE= %.3g C_STAB= %.3g C_DIST=%.3g\n",
-	  C_SIZE, C_STAB, C_DIST);
-  strcat(head, "#Mut\tncont");
+  char para[200], head[800],tmp[50];
+  sprintf(para, "# Mutation par.: C_SIZE= %.3g C_STAB= %.3g C_DIST=%.3g IWT=%d",
+	  C_SIZE, C_STAB, C_DIST, IWT);
+  strcpy(head, "#Mut\tncont");
   for(int a=0; a<20; a++){
     sprintf(tmp, "\t%c", AA_code[a]); strcat(head, tmp);
   }
   strcat(head,"\n");
-  char name1[200]; sprintf(name1,"%s.mut_RMSD.dat", nameout1);
-  char what1[200]="Predicted RMSD of all possible mutations";
-  FILE *file1=fopen(name1, "w");
-  printf("Writing %s in %s\n",what1,name1);
-  fprintf(file1, "# %s\n%s", what1,head);
-  char name2[200]; sprintf(name2,"%s.mut_DE.dat", nameout1);
-  char what2[200]="Predicted DE of all possible mutations";
-  FILE *file2=fopen(name2, "w");
-  printf("Writing %s in %s\n",what2, name2);
-  fprintf(file2, "# %s\n%s", what2,head);
+
+  char name[200]; sprintf(name,"%s.mut_RMSD.dat", nameout1);
+  char what[200]="Predicted RMSD of all mutations from WT";
+  FILE *file_rmsd=fopen(name, "w");
+  fprintf(file_rmsd, "# %s\n%s\n%s", what, para, head);
+  printf("Writing %s in %s\n", what,name);
+
+  sprintf(name,"%s.mut_DE.dat", nameout1);
+  strcpy(what, "Predicted DE of all mutations from WT");
+  FILE *file_de=fopen(name, "w");
+  fprintf(file_de, "# %s\n%s\n%s", what,para,head);
+  printf("Writing %s in %s\n",what, name);
+
+  FILE *file_de_all=NULL, *file_rmsd_all=NULL;
+  if(ALLPAIR){
+    strcpy(head, "#pos");
+    for(int a=0; a<20; a++){
+      for(int b=a+1; b<20; b++){
+	sprintf(tmp, "\t%c%c", AA_code[a], AA_code[b]);
+	strcat(head, tmp);
+      }
+    }
+    strcat(head,"\n");
+
+    strcpy(what, "Predicted RMSD of all pairs of mutations");
+    sprintf(name,"%s.mut_RMSD_all.dat", nameout1);
+    file_rmsd_all=fopen(name, "w");
+    fprintf(file_rmsd_all, "# %s\n%s\n%s", what,para,head);
+    printf("Writing %s in %s\n",what, name);
+
+    strcpy(what, "Predicted DE of all pairs of mutations");
+    sprintf(name,"%s.mut_DE_all.dat", nameout1);
+    file_de_all=fopen(name, "w");
+    fprintf(file_de_all, "# %s\n%s\n%s", what,para,head);
+    printf("Writing %s in %s\n",what, name);
+  }
 
   FILE *file3=NULL;
   if(0){
-    char what3[200]="Predicted RMSD and DE of all possible mutations";
-    char name3[200]; sprintf(name3,"%s.mut_all.dat", nameout1);
-    fopen(name3, "w");
-    printf("Writing %s in %s\n",what3, name3);
-    fprintf(file3, "# %s\nRMSD DE\n", what3);
+    strcpy(what, "Predicted RMSD and DE of all mutations from WT");
+    sprintf(name,"%s.mut_all.dat", nameout1);
+    fopen(name, "w");
+    printf("Writing %s in %s\n",what, name);
+    fprintf(file3, "# %s\nRMSD DE\n", what);
   }
 
   FILE *file4=NULL;
   if(0){
-    char what4[200]="Predicted force of all possible mutations";
-    char name4[200]; sprintf(name4,"%s.mut_force.dat", nameout1);
-    file4=fopen(name4, "w");
-    printf("Writing %s in %s\n",what4, name4);
-    fprintf(file4, "# %s\n%s", what4, head);
+    sprintf(what, "Predicted force of all mutations from WT");
+    sprintf(name,"%s.mut_force.dat", nameout1);
+    file4=fopen(name, "w");
+    printf("Writing %s in %s\n",what, name);
+    fprintf(file4, "# %s\n%s\n%s", what, para, head);
   }
 
   // Define memory
@@ -1252,38 +1288,35 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
     pred_mut_3[N3], pred_mut_2[Na]; // pred_mut_tot_2[Na];
 
   int Nmut=1, Posmut[1]; char AAwt[1], AAmut[1];
-  float MSD_mut=0, MSD_cross=0; double DE_pred=0;
+  float MSD_mut[20][20], MSD_cross=0, MSD[20];
+  float DE_pred[20][20], DE[20];
   double RMSD_prof[Na]; for(int i=0; i<Na; i++)RMSD_prof[i]=0;
   for(int ipos=0; ipos<Nres; ipos++){
     printf("%d ",ipos);
     Posmut[0]=ipos; AAwt[0]=seq[ipos].amm; AAmut[0]='A';
+    int wt=seq[ipos].i_aa;
     int mut_neigh[Na], n_cont_mut;
     Mut_neighbor(mut_neigh, Na, AAwt, Posmut, AAmut, Nmut,
 		 clist, cnum, Int_list, atoms, Nres);
-    char out[80];
+    char out[80]; int a, b;
     sprintf(out,"%c%s\t%d",AAwt[0],seq[ipos].pdbres, nc[ipos]); //ipos+1
-    fprintf(file1,"%s",out);
-    fprintf(file2,"%s",out);
+    fprintf(file_rmsd,"%s",out);
+    fprintf(file_de,"%s",out);
     if(file4)fprintf(file4,"%s",out);
-    for(int a=0; a<20; a++){
+    for(a=0; a<20; a++){
+      if(a==wt){DE[a]=1000; MSD[a]=1000; continue;}
       AAmut[0]=AA_code[a];
-      if(AAmut[0]==AAwt[0]){MSD_mut=0; DE_pred=0;}
-      else{
-	Pred_mut_str(C_size, C_stab, C_dist, &DE_pred, &MSD_mut, &MSD_cross,
-		     NULL, NULL, NULL, NULL,
-		     pred_mut_3, pred_mut_2, NULL, Na,
-		     &n_cont_mut, Force, Force_coeff,
-		     pred_mut_Cart, N_Cart, pred_mut_Tors, N_axes, 
-		     AAwt, Posmut, AAmut, Nmut,
-		     clist, cnum, Int_list, seq, Na,
-		     atoms, resatom, Ref_kin, kin_atom, NM, sigma2,
-		     NULL, NULL, NULL, NULL);
-	for(int i=0; i<Na; i++)RMSD_prof[i]+=pred_mut_2[i];
-      }
-      float RMSD_mut=sqrt(MSD_mut);
-      fprintf(file1,"\t%.2g",RMSD_mut);
-      fprintf(file2,"\t%.3g",DE_pred);
-      if(file3)fprintf(file3,"%.2g %.3g\n", RMSD_mut, DE_pred);
+      Pred_mut_str(C_size, C_stab, C_dist,
+		   DE+a, MSD+a, &MSD_cross,
+		   NULL, NULL, NULL, NULL,
+		   pred_mut_3, pred_mut_2, NULL, Na,
+		   &n_cont_mut, Force, Force_coeff,
+		   pred_mut_Cart, N_Cart, pred_mut_Tors, N_axes, 
+		   AAwt, Posmut, AAmut, Nmut,
+		   clist, cnum, Int_list, seq, Na,
+		   atoms, resatom, Ref_kin, kin_atom, NM, sigma2,
+		   NULL, NULL, NULL, NULL);
+      for(int i=0; i<Na; i++)RMSD_prof[i]+=pred_mut_2[i];
       if(file4){
 	double F=0;
 	if(AAmut[0]!=AAwt[0]){
@@ -1293,19 +1326,86 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
 	fprintf(file4,"\t%.2g",F);
       }
     }
-    fprintf(file1,"\n");
-    fprintf(file2,"\n");
+    // Compute mutation to same a.a. as mean of IWT lowest ones
+    if(IWT>0){
+      DE[wt]=10000; f_sort(DE, 20, i_rank);
+      double Y=0; for(a=0; a<IWT; a++)Y+=DE[i_rank[19-a]]; DE[wt]=Y/IWT;
+      MSD[wt]=10000; f_sort(MSD, 20, i_rank);
+      Y=0; for(a=0; a<IWT; a++)Y+=MSD[i_rank[19-a]]; MSD[wt]=Y/IWT;
+    }else{
+      double sum=0, norm=0; float *x=DE, p;
+      for(a=0; a<20; a++){
+	if(a!=wt){p=exp(-x[a]); sum+=x[a]*p; norm+=p;}
+      }
+      x[wt]=sum/norm;
+      sum=0; norm=0; x=MSD;
+      for(a=0; a<20; a++){
+	if(a!=wt){p=exp(-x[a]); sum+=x[a]*p; norm+=p;}
+      }
+      x[wt]=sum/norm;
+    }
+    for(a=0; a<20; a++){
+      float RMSD_mut=sqrt(MSD[a]);
+      fprintf(file_rmsd,"\t%.2g",RMSD_mut);
+      fprintf(file_de,"\t%.3g",DE[a]);
+      if(file3)fprintf(file3,"%.2g %.3g\n", RMSD_mut, DE[a]);
+    }
+    fprintf(file_rmsd,"\n");
+    fprintf(file_de,"\n");
+    if(file3)fprintf(file3,"\n");
     if(file4)fprintf(file4,"\n");
+
+    if(ALLPAIR){
+      // Compute all pairs
+      for(a=0; a<20; a++){
+	if(a==wt)continue;
+	DE_pred[a][wt]=DE[a];
+	DE_pred[wt][a]=DE[a];
+	MSD_mut[a][wt]=MSD[a];
+	MSD_mut[wt][a]=MSD[a];
+	AAwt[0]=AA_code[a];
+	for(b=a+1; b<20; b++){
+	  if(b==wt){continue;}
+	  AAmut[0]=AA_code[b];
+	  Pred_mut_str(C_size, C_stab, C_dist,
+		       &(DE_pred[a][b]), &(MSD_mut[a][b]), &MSD_cross,
+		       NULL, NULL, NULL, NULL,
+		       pred_mut_3, pred_mut_2, NULL, Na,
+		       &n_cont_mut, Force, Force_coeff,
+		       pred_mut_Cart, N_Cart, pred_mut_Tors, N_axes, 
+		       AAwt, Posmut, AAmut, Nmut,
+		       clist, cnum, Int_list, seq, Na,
+		       atoms, resatom, Ref_kin, kin_atom, NM, sigma2,
+		       NULL, NULL, NULL, NULL);
+	}
+      } // end pairs
+      // print all pairs
+      char out[20];
+      sprintf(out,"%c%s",AA_code[wt],seq[ipos].pdbres); //ipos+1
+      fprintf(file_rmsd_all,"%s", out);
+      fprintf(file_de_all,"%s", out);
+      for(a=0; a<20; a++){
+	for(b=a+1; b<20; b++){
+	  fprintf(file_rmsd_all,"\t%.2g",sqrt(MSD_mut[a][b]));
+	  fprintf(file_de_all,"\t%.3g",DE_pred[a][b]);
+	}
+      }
+      fprintf(file_rmsd_all,"\n");
+      fprintf(file_de_all,"\n");
+    } // end ALLPAIR
   }
-  fclose(file1);
-  fclose(file2);
+  fclose(file_rmsd);
+  fclose(file_de);
   if(file3)fclose(file3);
   if(file4)fclose(file4);
+  if(file_de_all)fclose(file_de_all);
+  if(file_rmsd_all)fclose(file_rmsd_all);
+
   // Print profile RMSD
   int NMUT=19*Nres;
-  sprintf(name1,"%s.mut_prof_RMSD.dat",nameout1);
-  file1=fopen(name1,"w");
-  printf("Printing profile of structural RMSD in %s\n",name1);
+  sprintf(name,"%s.mut_prof_RMSD.dat",nameout1);
+  FILE *file1=fopen(name,"w");
+  printf("Printing profile of structural RMSD in %s\n",name);
   fprintf(file1,"# Profile of structural deviations");
   fprintf(file1," averaged over %d simulated point mutations\n",NMUT);
   fprintf(file1,"# 1=res 2=n_contact 3=predicted RMSD from w.t.\n");

@@ -63,16 +63,16 @@ int Mode_confchange_old(struct Tors *Diff, struct Normal_Mode *NM,
 			struct Reference Ref, struct residue *seq,
 			float *coord_1, float *coord_2, float M_sqrt,
 			char *nameout, char *name_pdb);
-float RMSD_confchange(float cc, float *mode, float *d_phi,
+float RMSD_confchange(float cc, float *mode, double *d_phi,
 		      float *coord_all, float *coord_new,
-		      float *d_phi_opt, int naxes, struct bond *bonds,
+		      double *d_phi_opt, int naxes, struct bond *bonds,
 		      atom *atoms, int natoms, struct Reference Ref,
 		      float *coord_2);
 int Lasso_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
 			 struct bond *bonds, atom *atoms1, int natoms1,
 			 struct Reference Ref, float *coord_1, float *coord_2,
 			 char *nameout);
-float RMSD_Lasso_confchange(float lambda, float *cnew, float *d_phi,
+float RMSD_Lasso_confchange(float lambda, float *cnew, double *d_phi,
 			    float *coord_all, float *coord_new,
 			    float *c, double c2_sum,
 			    struct Normal_Mode *NM, struct bond *bonds,
@@ -86,7 +86,6 @@ float Test_Renyi(float *ene, float *P, int N, char *name, FILE *file);
 float Test_Null(float *omega_minus2, float *P, int N, char *name, FILE *file);
 int Select_cc2(float *dx2, int nres1, float *Dcart, atom *atoms1,
 	       struct Reference Ref, char *name);
-int Periodic_angles(float *dphi, struct axe *axe, int n);
 static float RMS(float *v, int n, int *outlier);
 unsigned long randomgenerator(void);
 static int ini_ran=0;
@@ -298,6 +297,7 @@ float Examine_confchange(struct Tors *Diff,
   char *name_dphi[max_dphi], name[80];
   float coeff[NM.N]; 
 
+  double dphi[naxe]; for(i=0; i<naxe; i++)dphi[i]=Diff->Tors[i];
   for(int i_dphi=0; i_dphi<max_dphi; i_dphi++){ //
 
     if(nstruct)continue; 
@@ -337,7 +337,7 @@ float Examine_confchange(struct Tors *Diff,
       struct bond *bonds2=Set_bonds_topology(natoms2, atoms2, seq2);
       Set_bonds_measure(bonds, natoms1, atoms1);
       Set_bonds_measure(bonds2,natoms2, atoms2);
-      Change_internal(Diff->Tors, naxe, bonds, bonds2, natoms1, 0, 0);
+      Change_internal(dphi, naxe, bonds, bonds2, natoms1, 0, 0);
       free(bonds2);
     }else  if(i_dphi==4){
       fflush(file_out);
@@ -350,7 +350,7 @@ float Examine_confchange(struct Tors *Diff,
       float cc_thr=0.0; // Filter modes contributing < cc_thr A
       if(1||MMASS==0){Modes=&NM; strcpy(mode_name, "normal");}
       else{Modes=&NM_kin; strcpy(mode_name, "mass");}
-      Torsional_confchange(Diff->Tors, "greedy", bonds, J_CC, Ref1, ali_a,
+      Torsional_confchange(dphi, "greedy", bonds, J_CC, Ref1, ali_a,
 			   0.1, atoms1, natoms1, namenew, axe, naxe,seq1,
 			   nres1, chains, Nchain, atoms2, natoms2, 
 			   Para_simul, Modes, mode_name, NMODES, cc_thr);
@@ -517,7 +517,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
     fprintf(file_out, " anharmonic\n");
     Predict_fluctuations(NM, sigma2);
   }
-
+  
   int REG2=1; // Regularization: 0=L1 (thredhold on rmsd), 1=L2 (limit DE)
   float c_thr=0, Lambda=0, rmsd_thr=0;
   if(REG2==0){
@@ -531,11 +531,13 @@ void Print_diff(int *num_dphi, char **name_dphi,
     for (i=0; i<N_modes; i++)sum_sigma2+=sigma2[i];
     Lambda=Coeff*sum_sigma2/N_modes;
   }
-
-   Periodic_angles(Diff->Tors, axe, naxes); // Remove 2pi
-   Compute_MW(Diff->MW_Tors, Diff->Tors, J);
-   // Initialize angles, they will be recomputed
-   for(a=0; a<naxes; a++)Diff->Tors[a]=0;
+  
+  double Diff_phi[naxes];
+  for(a=0; a<naxes; a++)Diff_phi[a]=Diff->Tors[a];
+  Periodic_angles(Diff_phi, axe, naxes); // Remove 2pi
+  // Initialize angles, they will be recomputed
+  for(a=0; a<naxes; a++){Diff->Tors[a]=Diff_phi[a]; Diff_phi[a]=0;}
+  Compute_MW(Diff->MW_Tors, Diff->Tors, J);
 
   // Print name
   name_dphi[*num_dphi]=malloc(80*sizeof(char));
@@ -555,7 +557,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
 				c/=(1+Lambda/sigma2[i]);*/
     }
     float *tt=NM->Tors[i];
-    for(a=0; a<naxes; a++)Diff->Tors[a]+=c*tt[a];
+    for(a=0; a<naxes; a++)Diff_phi[a]+=c*tt[a];
     Diff->coeff[i]=c;
     c2[i]=c*c;
     float de=c2[i]/sigma2[i];
@@ -565,7 +567,8 @@ void Print_diff(int *num_dphi, char **name_dphi,
     sum_c2+=c2[i];
   }
   for(i=0; i<N_modes;i++)c2[i]/=sum_c2; //norm_c2; // Normalize
-  Periodic_angles(Diff->Tors, axe, naxes); // Remove 2pi
+  Periodic_angles(Diff_phi, axe, naxes); // Remove 2pi
+  for(a=0; a<naxes; a++)Diff->Tors[a]=Diff_phi[a];
   Compute_MW(Diff->MW_Tors, Diff->Tors, J);
 
   // Scale for equating random and real confchange
@@ -628,7 +631,9 @@ void Print_diff(int *num_dphi, char **name_dphi,
     printf("RMSD to target= %.2f\n", RMSD_target);
     Copy_bonds(bonds, bonds_min, natoms1);
   }else{
-    Build_up(bonds, natoms1, Diff->Tors, NM->N_axes);
+    double d_phi[NM->N_axes];
+    for(int i=0; i<NM->N_axes; i++)d_phi[i]=Diff->Tors[i];
+    Build_up(bonds, natoms1, d_phi, NM->N_axes);
   }
   Put_coord(coord_all, bonds, natoms1);
   Write_ref_coord(coord_new, Ref.N_ref, coord_all, Ref.atom_num);
@@ -1037,7 +1042,7 @@ void Print_modes_confchange(char *name2, char *nameout2,
   }
   fprintf(file_out, "\n");
 
-  float N_sqrt=sqrt(NM.N_Cart/3);
+  //float N_sqrt=sqrt(NM.N_Cart/3);
   double sum_coeff_C=0; //sum_B=0;
   for(k=0; k<NM.N; k++){
     int ik=NM.sort[k]; if(ik<0)continue;
@@ -1049,7 +1054,7 @@ void Print_modes_confchange(char *name2, char *nameout2,
     fprintf(file_out, "%7.4g  ",NM.sigma2[ik]);
     if(anharmonic)fprintf(file_out,"%7.4g  %7.4g  ",
 			  xkappa*NM.sigma2_anhar[ik],NM.sigma2_anhar[ik]);
-    fprintf(file_out, "  %8.3g", 1./(N_sqrt*NM.omega[ik]));
+    fprintf(file_out, "  %8.3g", 1./(M_sqrt*NM.omega[ik]));
     fprintf(file_out, "  %5.3f", NM.Cart_coll[ik]);
     fprintf(file_out, "  %5.3f", NM.MW_Tors_coll[ik]);
     fprintf(file_out, "  %5.3f", NM.Tors_coll[ik]);
@@ -1205,7 +1210,7 @@ int Select_cc2(float *dx2, int nres1, float *Dcart, atom *atoms1,
   return(n);
 }
 
-int Periodic_angles(float *dphi, struct axe *axe, int n)
+int Periodic_angles(double *dphi, struct axe *axe, int n)
 {
   float pi=acos(-1), twopi=2*pi; int m=0;
   for(int i=0; i<n; i++){
@@ -1287,7 +1292,7 @@ int Mode_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
   fprintf(file_out, "%.3g\t%.3g\t0\t0\n",rmsd_ini,rmsd_ini);
 
   int naxes=NM->N_axes, ncoord=NM->N_Cart;
-  float d_phi_opt[naxes], d_phi[naxes], d_phi_best[naxes];
+  double d_phi_opt[naxes], d_phi[naxes], d_phi_best[naxes];
   float coord_new[ncoord], coord_step[ncoord], coord_all[3*natoms];
   float D_coord[ncoord];   
   float sigma[NM->N]; for(int i=0; i<NM->N; i++)sigma[i]=sqrt(NM->sigma2[i]);
@@ -1443,7 +1448,7 @@ int Mode_confchange_old(struct Tors *Diff, struct Normal_Mode *NM,
 
   float rmsd_ini=rmsd_mclachlan_f(coord_1,coord_2,Ref.mass_atom,Ref.N_ref);
   int naxes=NM->N_axes, ncoord=NM->N_Cart;
-  float d_phi_opt[naxes], d_phi[naxes];
+  double d_phi_opt[naxes], d_phi[naxes];
   float coord_new[ncoord], coord_step[ncoord], coord_all[3*natoms];
   float D_coord[ncoord];   int done[NM->N];
   float gasdev(long *idum);
@@ -1627,7 +1632,7 @@ int Lasso_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
 	  NM->N, sum_c1);
 
   float cnew[NM->N], coord_new[3*Ref.N_ref], coord_all[3*natoms];
-  float d_phi[NM->N_axes];
+  double d_phi[NM->N_axes];
 
   float x[3], y[3], lambda=sum_c1, lambda_step=lambda*0.2;
   y[1]=-RMSD_Lasso_confchange(0, cnew, d_phi, coord_all, coord_new,
@@ -1670,7 +1675,7 @@ int Lasso_confchange_fit(struct Tors *Diff, struct Normal_Mode *NM,
   return(0);
 }
 
-float RMSD_Lasso_confchange(float lambda, float *cnew, float *d_phi,
+float RMSD_Lasso_confchange(float lambda, float *cnew, double *d_phi,
 			    float *coord_all, float *coord_new,
 			    float *c, double c2_sum,
 			    struct Normal_Mode *NM, struct bond *bonds,
@@ -1699,9 +1704,9 @@ float RMSD_Lasso_confchange(float lambda, float *cnew, float *d_phi,
   return(rmsd2);
 }
 
-float RMSD_confchange(float cc, float *mode, float *d_phi,
+float RMSD_confchange(float cc, float *mode, double *d_phi,
 		      float *coord_all, float *coord_new,
-		      float *d_phi_opt, int naxes, struct bond *bonds,
+		      double *d_phi_opt, int naxes, struct bond *bonds,
 		      atom *atoms, int natoms, struct Reference Ref,
 		      float *coord_2)
 {

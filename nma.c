@@ -13,7 +13,7 @@
 #include "diagonalize.h"
 #include "ridge_regression.h"
 
-int INT_MAX;
+//int INT_MAX;
 int DBG_NMA=0;
 int DEBUG;
 int ALL_AXES;
@@ -144,6 +144,72 @@ int Get_tors(struct axe *axe, int naxe, int res, int a_ini);
 /***************************************************************************
                                CODES
 ****************************************************************************/
+
+void Allocate_Normal_modes(struct Normal_Mode *NM,
+			   int N_modes, int N_axes, int N_Cart)
+{
+  NM->N=N_modes;
+  NM->N_kin=N_modes;
+  NM->N_axes=N_axes;
+  NM->N_Cart=N_Cart;
+  int i;
+
+  NM->select=malloc(N_modes*sizeof(int));
+  NM->omega=malloc(N_modes*sizeof(float));
+  NM->omega2=malloc(N_modes*sizeof(float));
+  NM->sigma2=malloc(N_modes*sizeof(float));
+  NM->Cart=Allocate_mat2_f(N_modes, N_Cart);
+  NM->Tors=Allocate_mat2_f(N_modes, N_axes);
+  NM->MW_Tors=Allocate_mat2_f(N_modes, N_axes);
+  NM->Cart_coll=malloc(N_modes*sizeof(float));
+  NM->Tors_coll=malloc(N_modes*sizeof(float));
+  NM->MW_Tors_coll=malloc(N_modes*sizeof(float));
+  NM->Max_dev=malloc(N_modes*sizeof(float));
+  NM->sort=malloc(N_modes*sizeof(int));
+  NM->Tors_frac=malloc(N_modes*sizeof(float));
+  for(i=0; i<N_modes; i++)NM->Tors_frac[i]=1.0;
+  NM->tors_fluct=malloc(NM->N_axes*sizeof(float));
+  NM->cart_fluct=malloc(NM->N_Cart*sizeof(float));
+  NM->confchange2=malloc(N_modes*sizeof(float));
+  NM->sigma2_anhar=malloc(N_modes*sizeof(float));
+  NM->d_KL=malloc(N_modes*sizeof(float));
+  NM->Anharmonicity=malloc(N_modes*sizeof(float));
+  NM->Anharm_struct=malloc(N_modes*sizeof(float));
+  for(i=0; i<N_modes; i++){
+    NM->Anharmonicity[i]=0; NM->Anharm_struct[i]=0;
+  }
+  NM->Max_factor=malloc(N_modes*sizeof(float));
+  NM->Max_RMSD=malloc(N_modes*sizeof(float));
+  for(i=0; i<N_modes; i++)NM->Max_RMSD[i]=-1;
+}
+
+
+void Empty_Normal_modes(struct Normal_Mode NM)
+{
+
+  // Cleaning normal modes
+  Empty_matrix_f(NM.Cart, NM.N);
+  Empty_matrix_f(NM.Tors, NM.N);
+  Empty_matrix_f(NM.MW_Tors, NM.N);
+  free(NM.omega2);
+  free(NM.omega);
+  free(NM.select); //modyves: was never freed
+  free(NM.sigma2);
+  free(NM.Cart_coll);
+  free(NM.Tors_coll);
+  free(NM.MW_Tors_coll);
+  free(NM.Tors_frac);
+  free(NM.sort);
+  free(NM.Anharmonicity);
+  free(NM.Anharm_struct);
+  free(NM.Max_factor);
+  free(NM.Max_RMSD);
+  free(NM.Max_dev); 
+  free(NM.cart_fluct);
+  free(NM.tors_fluct);
+  free(NM.confchange2);
+
+}
 
 
 /*********************************  INM ************************************/
@@ -359,6 +425,8 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
   // eta_ak = sum_b chi_kb v_b T_sqrt_inv_ab
   // tau_ak = sum_b chi_kb shift_b T_sqrt_inv_ab
   //
+  printf("Computing torsional Hessian matrix\n");
+
   int i, j, k, l, n, a;
   for(i=0; i<N_axes; i++)for(j=0; j<N_axes; j++)Hessian[i][j]=0;
 
@@ -371,7 +439,7 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
   if(kinetic==0){
     for(a=0; a<N_axes; a++){
       struct axe *a_axe=axes+a;
-      for(i=a; i<N_axes; i++){
+      for(i=a; i<N_modes; i++){
 	double *eta=eta_iaj[i][a], *tau=tau_iaj[i][a];
 	for(j=0; j<3; j++){
 	  eta[j]=a_axe->rot[j];
@@ -488,9 +556,9 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
     for(k=0; k< N_modes; k++){
       for(j=0; j<3; j++){
 	eta[j]=eta_2[k][j]-eta_1[k][j];
-	tau[j]=tau_2[k][j]-tau_1[k][j];
+	tau[j]=tau_2[k][j]-tau_1[k][j];    // For kinetic=0 eta,tau=0, wrong!
       }
-      dk[k]=Scalar_product_3_d(cr21, eta)-
+      dk[k]=Scalar_product_3_d(cr21, eta)- // 03/2023: OK
 	Scalar_product_3_d(r21, tau);
       double Hk=h*dk[k];
       for(l=0; l<=k; l++){
@@ -503,11 +571,26 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
     printf("chain %d (%c): %3d contacts\n", i, chains[i].label, N_cont[i]);
   if(Nchain>1)printf("%d interchain contacts\n", n_inter);
 
-  // Hessian of the torsional potential K(a)*(theta_a-theta0_a)^2
-  printf("Computing torsional potential\n");
   if((K_OMEGA==0)&&(K_PHI==0)&&(K_PSI==0)&&(K_CHI==0)&&(K_BA==0)&&(K_BL==0))
     goto upper_diagonal;
-  if(T_sqrt_inv){
+
+  // Hessian of the torsional potential K(a)*(theta_a-theta0_a)^2
+  printf("Computing torsional potential\n");
+
+  if(kinetic==0){
+    struct axe *ax=axes;
+    for(k=0; k<N_axes; k++){
+      if(ax->type=='f'){Hessian[k][k]+=K_PHI;}
+      else if(ax->type=='p'){Hessian[k][k]+=K_PSI;}
+      else if(ax->type=='l'){Hessian[k][k]+=K_BL;}
+      else if(ax->type=='a'){Hessian[k][k]+=K_BA;}
+      else if(ax->type=='t'){Hessian[k][k]+=K_PHI;}
+      else if(ax->type=='o'){Hessian[k][k]+=K_OMEGA;}
+      else if(ax->type=='s'){Hessian[k][k]+=K_CHI;}
+      ax++;
+    }
+
+  }else if(T_sqrt_inv){
     for(k=0; k<N_modes; k++){
       float *tk=T_sqrt_inv[k];
       for(l=0; l<=k; l++){
@@ -572,6 +655,7 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
 
   if(DBG_NMA){
     // Print
+    if(kinetic==0){printf("Kinetic energy not considered\n");}
     if(T_sqrt_inv==NULL){printf("Cholevsky decomposition\n");}
     else{printf("Diagonalization of kinetic energy\n");}
     printf("V''(r^PDB): ");
@@ -844,9 +928,9 @@ void Convert_torsion2cart(float *Cart_mode, atom *atoms, float *u_a,
   }
   Normalize_vector_weighted(Cart_mode, Ref.mass_coord, Ref.N_Cart);
 
-  // UGO 10/08/22 r_i=sqrt(m_i)*x_i;
-  float norm=sqrt(Ref.mass_sum/Ref.N_ref);
-  for(j=0; j<Ref.N_Cart; j++)Cart_mode[j]*=norm; //Ref.mass_sqrt[j];
+  // UGO 10/08/22 r_i=sqrt(m_i)*x_i; It may induce mistakes
+  //float norm=sqrt(Ref.mass_sum/Ref.N_ref);
+  //for(j=0; j<Ref.N_Cart; j++)Cart_mode[j]*=norm; //Ref.mass_sqrt[j];
 
   if(0){
     // Test Eckart conditions. 15/03/19 I verified that they are fulfilled
@@ -2078,10 +2162,9 @@ float Compute_Max_dev(float *Cart_mode, float omega2, int N_Cart,
 {
   float Max_dev=0; int i;
   for(i=0; i< N_Cart; i++){
-    float x=fabs(Cart_mode[i])*mass_sqrt[i]; //;
+    float x=fabs(Cart_mode[i]); //*mass_sqrt[i];
     if(x>Max_dev)Max_dev=x;
   }
-  //return(3*Max_dev/sqrt(omega2));
   return(Max_dev/sqrt(omega2));
 }
 

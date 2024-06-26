@@ -6,7 +6,7 @@ int Set_bonds_measure(struct bond *bonds, int N_atoms, atom *atoms);
 int Set_bonds_prot(struct bond *bonds, int N_atoms,
 		   atom *atoms, struct axe *axes, int naxes);
 void Build_up(struct bond *bonds, int N_atoms,
-	      float *d_phi, int N_axes);
+	      double *d_phi, int N_axes);
 void Internal_coordinates(double *int_coord, int N_axes,
 			  struct bond *bonds, int N_atoms);
 void Trajectory(atom *atoms, int natoms, struct axe *axes, int naxe,

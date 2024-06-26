@@ -21,7 +21,7 @@ int Force2Confchange(float *atom_move, char *FILE_FORCE,
 		     struct bond *bonds)
 {
   int N_cart=3*N_ref, i, ia, j, k;
-  float Delta_theta[naxe1];
+  double Delta_theta[naxe1];
   float Force_input_cart[N_cart];
   float Force_input_tors[naxe1];
   float Force_input_coef[naxe1];

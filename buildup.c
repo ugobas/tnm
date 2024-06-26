@@ -25,7 +25,7 @@ void Trajectory(atom *atoms, int natoms, struct axe *axes, int naxe,
   int iter, i, iatom, j;
 
   Set_bonds_measure(bonds, natoms, atoms);
-  float *d_phi=malloc(naxe*sizeof(float));
+  double d_phi[naxe];
   for(i=0; i<naxe; i++)d_phi[i]=Tors_mode[imode][i]*fact;
 
   atom *atommove=malloc(natoms*sizeof(atom));
@@ -45,7 +45,6 @@ void Trajectory(atom *atoms, int natoms, struct axe *axes, int naxe,
     }
     printf("mode %2d step %3d d2=%.4f\n", imode, iter, r2);
   }
-  free(d_phi);
   free(atommove);
 }
 
@@ -193,7 +192,7 @@ int Set_bonds_measure(struct bond *bonds, int N_atoms, atom *atoms)
   return(0);
 }
 
-void Build_up(struct bond *bonds, int N_atoms, float *d_phi, int N_axes)
+void Build_up(struct bond *bonds, int N_atoms, double *d_phi, int N_axes)
 {
   float COSMAX=0.999; // Maximum value of cos(theta) to avoid collinear bonds
   struct bond *bond, *previous; int i, j;
@@ -286,14 +285,16 @@ void Build_up(struct bond *bonds, int N_atoms, float *d_phi, int N_axes)
     }
 
     // Make new orthogonal frame
-    if(bond->terminal==0){
-      if(Make_frame(bond, previous, previous->dz)<0)return;
+    if(bond->terminal==0 && Make_frame(bond, previous, previous->dz)<0){
+      printf("Could not make last frame, exiting\n");
+      return;
     }
   }
   return;
 }
 
-void Compare_build_up(struct bond *bonds, int N_atoms, float *d_phi, int N_axes,
+void Compare_build_up(struct bond *bonds, int N_atoms,
+		      double *d_phi, int N_axes,
 		      struct bond *bonds2)
 {
   struct bond *bond, *previous; int i, j, error=0;
@@ -468,12 +469,16 @@ int Make_frame(struct bond *bond, struct bond *previous, double *pz)
     norm= 1./sqrt(norm);
     for(j=0; j<3; j++)bond->dy[j]*=norm;
   }else{
-    printf("ERROR in Make_frame norm_y= %.2g atom= %s %d\n", norm,
-	   bond->atom->name, bond->atom->res); return(-1);
+    printf("ERROR in Make_frame norm_y= %.2g atom= %s res=%d\n"
+	   "dy=%.2g %.2g %.2g dx= %.2g %.2g %.2g dz= %.2g %.2g %.2g\n",
+	   norm, bond->atom->name, bond->atom->res,
+	   bond->dy[0], bond->dy[1], bond->dy[2],
+	   bond->dx[0], bond->dx[1], bond->dx[2],
+	   bond->dz[0], bond->dz[1], bond->dz[2]);
+    return(-1);
   }
   return(0);
 }
-
 
 struct bond *Find_previous(struct bond *bond, int n, int N_atoms,
 			   struct residue *seq)
@@ -715,3 +720,4 @@ int Is_atom_main(char *name, int seq_type){
   }
 }
     
+

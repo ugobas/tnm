@@ -87,13 +87,12 @@ int Print_PDB_mode_old(char *nameout, int ia, float *Cart_mode,
   FILE *file_out;  char outfile[200];
   //~ FILE * CHAIN[2];
   int i, j, k; atom *atom1=atoms;
-  char aaname3[10];
+  char aaname3[10];   float r[3];
   // Amplitude factors
   //~ float DTHETA=0;
   //~ float AMPL_FACTOR=16; // Amplification with respect to thermal fluctuations
   //~ float AMAX=120;      // New amplitude factor
   //~ float step, dtheta;
-  float r[3];
   //~ int N_STEP=10; // Number of conformations per normal mode
   //~ int i_step;
   //~ double norm;
@@ -101,8 +100,8 @@ int Print_PDB_mode_old(char *nameout, int ia, float *Cart_mode,
   for(i=0; i<10; i++)aaname3[i]='\0';
 
   // Opening file
+  sprintf(outfile, "%s_modes.pdb", nameout);
   if(ia<1){
-    sprintf(outfile, "%s_modes.pdb", nameout);
     file_out=fopen(outfile, "w");
     printf("Writing normal modes in PDB format in %s\n", outfile);
     fprintf(file_out, "MODEL 0:  Native structure\n");
@@ -112,17 +111,10 @@ int Print_PDB_mode_old(char *nameout, int ia, float *Cart_mode,
     fprintf(file_out, "REMARK  Normal mode %3d  Percent fluctuation= %.2f",
 	    ia, eigen_B*100.0);
     fprintf(file_out,
-	    "REMARK Collectivity: Cartesian %.3f Torsional %.3f MW_Torsional %.3f\n",
+	    "REMARK Collectivity: "
+	    "Cartesian %.3f Torsional %.3f MW_Torsional %.3f\n",
 	    Cart_collectivity, Tors_collectivity, MW_Tors_collectivity);
   }
-
-  /*
-  // Compute amplitude
-  DTHETA=1./sqrt(eigen_value);
-  fprintf(file_out, " sqrt<theta^2>= %.4f\n", DTHETA);
-  DTHETA*=AMPL_FACTOR;
-  step=DTHETA/N_STEP; dtheta=0;
-  */
 
   // Compute and print
   int jatom=0;
@@ -157,7 +149,7 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,
   float kappa=Collectivity_norm1(NM.sigma2, NM.N);
   fprintf(file_out, "# Reciprocal collectivity of fluctuations=  %.1f\n",kappa);
   fprintf(file_out, "# kappa=  %.3f\n",xkappa);
-  float N_sqrt=sqrt(NM.N_Cart/3);
+  //float N_sqrt=sqrt(NM.N_Cart/3);
 
   double norm=0; for(i=0; i<NM.N; i++)norm+=NM.sigma2[i];
   if(anharmonic){
@@ -197,7 +189,7 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,
       fprintf(file_out,"%7.4g %7.4g  ",
 	      xkappa*NM.sigma2_anhar[i],NM.sigma2_anhar[i]);
     }
-    fprintf(file_out, " %7.3g", 1./(N_sqrt*NM.omega[i])); //M_sqrt*
+    fprintf(file_out, " %7.3g", 1./(M_sqrt*NM.omega[i]));
     fprintf(file_out, "  %5.3f", NM.Cart_coll[i]);
     if(NM.MW_Tors_coll)fprintf(file_out, " %5.3f", NM.MW_Tors_coll[i]);
     if(NM.Tors_coll)fprintf(file_out, " %5.3f", NM.Tors_coll[i]);

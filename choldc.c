@@ -2,7 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "allocate.h"
-#define EPS 0.00000000000001
+#define EPS 0.000000001
 
 int choldc(double **L, double **a, int N);
 
@@ -27,12 +27,13 @@ int choldc(double **L, double **a, int N)
 	if(sum<EPS){
 	  printf("WARNING, Choldc failed L_ii^2= %.2g i=%d\n", sum, i);
 	  if(L==a){
-	    // Ugo: Restore lower diagonal
+	    // Ugo: Same matrix, restore lower diagonal
 	    for(ik=0; ik<i; ik++){
 	      a[ik][ik]=diag[ik];
 	      for(jk=ik+1; jk<N; jk++)a[jk][ik]=a[ik][jk];
 	    }
 	  }
+	  //exit(8);
 	  return(-1);
 	}
 	diag[i]=a[i][i]; L[i][i]=sqrt(sum);

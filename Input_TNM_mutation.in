@@ -1,0 +1,144 @@
+# Lines beginning with # are interpreted as comments.
+#
+# 1) Input proteins
+#==============================
+#The input pdb must be specified in the records "PDB1" and "CH1" 
+#PDB1= /data/ortizg/databases/pdb/1l63.pdb
+#CH1=  A  (A, ABCDE, ALL)
+#If the conformation change between two proteins is required, it must be
+#specified with the records "PDB2" and "CH2", e.g.
+#PDB2= /data/ortizg/databases/pdb/245l.pdb
+#CH2= A
+#BINDING= A
+#FOLDING=1
+#
+# 2) Model parameters (recommended: use the default)
+#===================================================
+# Degrees of freedom:
+DOF=  TORS             ! Torsional degrees of freedom (alternative: CART)
+PSI=1                  ! Use psi angle as degree of freedom?
+OMEGA=0                ! Use mainchain omega as degree of freedom? (default:NO)
+#OMEGA=-1              ! Use mainchain omega only for CISTRANS bonds?(def:NO)
+SIDECHAIN=0            ! Use sidechain degrees of freedom?
+MIN_INT=1              ! dofs with fewer than MIN_INT interactions are frozen
+# Kinetic energy:
+REF= ALL
+# Atoms used for kinetic energy. Allowed: ALL EB BB CB CA
+# Potential energy
+CONT_TYPE= MIN         ! Contact definition (allowed: MIN DIR SCB CB CA HB HNM) 
+CONT_THR= 4.5          ! Threshold for contacts
+K_PHI=0.2 10.0 0.2              ! Elastic constant for angle phi
+K_PSI=0.2               ! Elastic constant for angle psi
+K_OMEGA=1.0              ! Elastic constant for angle omega (if present)
+K_CHI=0.5              ! Elastic constant for angle chi (if present)
+K_BL=1.0               ! Elastic constant for bond length
+K_BA=0.5               ! Elastic constant for bond angle
+#K_TOR=0.1              ! Elastic constant for torsion angle
+EXP_HESSIAN= 6        ! Force constant: k~r^(-e)
+FIT_B= 1     	       ! Fit B factors if present? (default YES)
+KAPPA= 218 300000
+# Normal modes
+E_MIN=0.00000001	! Threshold on eigenvalues w^2/<w^2>
+COLL_THR=10            ! Select modes with number of moved atoms > COLL_THR
+#
+# 3) Output
+#===================================================
+#
+# 3A) General
+#----------------------
+LABEL=0                 ! Print model parameters in file names?
+PRINT_SUMM= 1		! Print summary of results (1=TRUE)
+PRINT_CONT_MAT=0	! Print contact matrix? (1=TRUE)
+DEBUG=0			! Print debugging information (messy)
+ANHARMONIC= 0           ! Anharmonicity analysis for all modes
+PRINT_PDB_ANHARM=0      ! Print PDB while computing anharmonic energy
+N_PDB_print=5           ! Number of PDB to print in each dir if PRINT_PDB_ANH
+#
+# 3B) Normal modes
+#----------------------
+NMODES=5 0		! Number of modes to print (default zero)
+PRINT_PDB= 0		! Print modes as PDB files? (1=TRUE)
+AMPLITUDE=2.0           ! Maximum amplitude of the PDB movie, 
+#                       ! stop when the repulsion energy reaches E_THR
+E_THR=5.0               ! Maximum allowed rep. energy of generated structures
+D_REP=2.5               ! Maximum distance for computing repulsion energy
+RMSD_STEP=0.2           ! Minimum Rmsd between structures in a movie
+#
+# 3C) Simulated structures of the thermal ensemble
+#-----------------------------------------------
+SIMUL=0 20 10	       ! Number of simulated structures
+AMPL_MIN= 1.0          ! Minimum amplitude with respect to thermal fluct.
+AMPL_MAX= 16.          ! Maximum amplitude
+AMPL_FACT=2.0          ! Increase factor between simulated amplitudes
+#
+# 3D) Conformational change
+#---------------------------
+PRINT_CHANGE=0       ! Print movie of conformational change? (slow)
+PRINT_FORCE= 0       ! Print the force that would generate the observed
+#                      conformational change
+STEP_MAX= 0.15        ! Maximum RMSD between steps for greedy confchange
+STEP_MIN= 0.001      ! Minimum RMSD between steps for greedy confchange
+NSTEPS= 900          ! Number of steps for greedy confchange
+ANGLE= 0.05           ! Angular step for greedy confchange
+#
+# 3E) Mutation
+#
+PRED_MUT=0             ! Predict RMSD of all possible mutations?
+MUT_PARA=Mutation_para.in  ! File with mutation parameters
+NMUT=-1                ! Number of mutations for analyzing conf.change as mut
+# If NMUT==-1 the analysis is run irrespective of number of mutations
+RMSD_MIN=0.1           ! Minimum RMSD for running analysis
+#
+# 3F) DYNAMICAL COUPLINGS
+# ====================================
+ALLOSTERY=0	! Compute dynamical couplings?
+PROF_TYPE=C		! A=average coupling P=Principal eigenvector of coup.
+#			! C= effective connectivity of coup. 
+ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
+SIGMA= 2.0 		! if(ALL_PAIRS==0), couplings are printed if
+#      			!                    c_ij >/< <c>+/- SIGMA*st.dev.
+PRINT_DEF_COUPLING=1	! Print deformation couplings
+# Deformation coupling A_ij is the deformations produced on site j by a
+# unitary force applied in j in the direction that maximizes the deformation.
+# Output file: <>_deformation_coupling.dat
+PRINT_DIR_COUPLING= 1	! Print directionality couplings
+# Directionality coupling D_ij is the Boltzmann average of the scalar
+# product of the direction of motion of the residues i and j. If it is
+# positive the two residues tend to move in the same direction.
+# Output file: <>_directionality_coupling.dat
+PRINT_COORD_COUPLING=1			  ! Print coordination couplings
+# Coordination coupling C_ij is the Boltzmann average of the RMS
+# fluctuations of the distance d_ij with respect to the equilibrium value.
+# If it is small the two residues maintain an almost fixed distance during
+# their dynamics.
+# Output file: <>_coordination_coupling.dat
+PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
+# Note that the coordination coupling is Coord_ij= 1.-0.5*sqrt(Var(Dij))
+#SITES=<file_site>	! File where functional sites are read.
+# If not specified, read from the SITE record in the PDB file.
+# The program computes the mean and the significance of the coupling of pairs
+# of residues within (<>_binding_sites.dat) and between (<>_pairs_sites.dat)
+# functional sites
+# format of <file_site>: SITE(num) AA(3 letters) CHAIN RESNUM(as in PDB)
+# Example (delete the # symbol from the following lines):
+#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323                 
+#1	ASP	A	127
+#1	ARG	A	162
+#1	MET	A	169
+#1	GLY	A	170
+#1	ARG	A	252
+#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE MG A 327                  
+#3	GLY	A	185
+#3	GLU	A	187
+#
+#INTERACTION TYPES (CONT_TYPE)
+#MIN: At least 2 heavy atoms within threshold
+#SCR: Screened interactions (screening of the atom k that minimizes s=max(d_ik,d_jk) is considered, it generates a weight w=exp((s-d_ij)/t)/[1+exp((s-d_ij)/t)] where t is the tolerance parameter
+#SHA: Shadow interaction (same idea as screened, 3 different implementations S_TYPE=0,1,2)
+#SCB: Same as MIN, but the TNM contraints the distance between the two CB of the itneracting residues.
+#CA, CB: Only distances between CA, CB are checked
+#HB: Same as MIN, but interactions that are due to hydrogen bonds are weighted more
+#HNM: Hinsen Network Model, like ANM with CA interactions but interactions between neighboring residues are weighted more.
+
+
+
