@@ -1,0 +1,9 @@
+EXP_FORCE=2  ! Force at distance r decreases as r^-EXP
+OPT_COEFF=1 ! Optimize coefficients?
+OPT_SCORE=C  ! Optimal score: Cartesian (C) or absolute value (A)?
+#C_SIZE=6 ! Coefficient of size component of perturbation
+#C_STAB=25   ! Coefficient of stability component of perturbation
+#C_DIST=15   ! Coefficient of distance component of perturbation
+C_SIZE=1.15  ! Coefficient of size component of perturbation
+C_STAB=4.6   ! Coefficient of stability component of perturbation
+C_DIST=0.69  ! Coefficient of distance component of perturbation

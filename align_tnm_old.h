@@ -1,7 +1,4 @@
-#ifndef ALIGN_TNM
-#define ALIGN_TNM
-
-extern int MIN_ALI_LEN; // Chains are aligned if L>MIN_ALI_LEN, if not peptides
+int MIN_ALI_LEN;  // Chains are aligned if L>MIN_ALI_LEN, if not peptides
 
 struct Ali_score{
   float seq_id, aligned, psi, mamm_score;
@@ -11,7 +8,7 @@ struct Ali_score{
 };
 
 
-int Align_chains(int *Nmut, char *AAwt, int *Posmut, char *AAmut,
+int Align_chains(int *Nmut, int *Posmut, char *AAmut,
 	         struct Ali_score *ali, int *last_ali_res,
 		 int *Nchain, float SEQID_THR,
 		 struct chain *chains1, int Nchain1,
@@ -24,7 +21,6 @@ void Purge_not_aligned(struct chain *chains1, atom *atoms1, int *natoms1,
 		       struct chain *chains2, atom *atoms2, int *natoms2);
 float Examine_confchange(struct Tors *Diff,
 			 struct bond *bonds, struct axe *axe,
-			 struct chain *chains, int Nchain,
 			 char *nameout, char *name1, char *namepdb,
 			 atom *atoms1, float *coord_ref1,
 			 struct residue *seq1, int nres1,
@@ -32,20 +28,15 @@ float Examine_confchange(struct Tors *Diff,
 			 atom *atoms2, float *coord_ref2,
 			 struct residue *seq2, int nres2,
 			 int N_diso2, int natoms2,
-			 struct Reference Ref, //struct Jacobian *J,
-			 struct ali_atoms ali_atoms,
 			 struct interaction *Int_list1, int N_int1,
 			 char *INT_TYPE, float S0, int N_modes,
+			 struct Reference Ref, struct Jacobian *J,
 			 struct Normal_Mode NM, int nprint,
 			 struct Ali_score ali,
-			 struct Para_simul Para_simul,
-			 //float *diff_phi,  float *greedy_phi,
+			 struct Para_confchange Para_confchange,
+			 float *diff_phi,  float *greedy_phi,
 			 int nstruct, float *B_TNM, int *outlier_tors,
-			 char *name2, int PRINT_CHANGE,
-			 int anharmonic);
+			 char *name2);
 void Print_modes_confchange(char *name2, char *confchange,
 			    struct Normal_Mode NM, struct Tors Diff,
-			    int ANM, float M_sqrt, float rmsd, int anharmonic,
-			    float xkappa);
-
-#endif
+			    int ANM, float M_sqrt, float rmsd);

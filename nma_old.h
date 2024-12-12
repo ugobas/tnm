@@ -1,5 +1,3 @@
-#ifndef __INI_NMA
-#define __INI_NMA 
 
 #include <stdio.h>
 extern int DEBUG,ALL_AXES;
@@ -10,11 +8,11 @@ extern char chain;
 // float dist_CA[L_MAX]; // Squared distance from the center of mass
 extern char file_aniso[200];
 extern int INT_MAX;
-extern char REF_CC[5]; // Reference atoms for computing conformation change
 
 /******************** Shared variables ****************************/
 #define AMIN_CODE "AEQDNLGKSVRTPIMFYCWHX"
 #define AA3 "ALA GLU GLN ASP ASN LEU GLY LYS SER VAL ARG THR PRO ILE MET PHE TYR CYS TRP HIS "
+
 
 /****************************************************************
                       SHARED ROUTINES
@@ -28,25 +26,21 @@ int Read_command_line_nma(int argc, char **argv, char *file_pdb, char *output,
 			  int *N_MODES, char *FILE_RESTR);
 void GetPdbId(char *pdb_file_in, char *pdbid);
 
-void Allocate_Normal_modes(struct Normal_Mode *NM,
-			   int N_modes, int N_axes, int N_Cart);
-void Empty_Normal_modes(struct Normal_Mode NM);
-
 /*********************************  INM ************************************/
 void Normal_modes_INM(int N,           //degrees of freedom
 		      struct interaction *Int_list, int N_int,
 		      atom *atoms, int N_atoms,
-		      double **Hessian, float **eigen_vector,
+		      float **Hessian, float **eigen_vector,
 		      float *eigen_value, float *eigen_B,
 		      float *B_CA, float *Cart_collectivity);
 
 /*********************************  ANM ************************************/
-void Compute_Hessian_ANM(double **Hessian, int N_ref, int *atom_ref,
+void Compute_Hessian_ANM(float **Hessian, int N_ref, int *atom_ref,
 			 struct interaction *Int_list, int N_int,
 			 atom *atoms, int natoms);
 void Normal_modes_ANM(// OUTPUT:
 		      float *eigen_value, float **eigen_vector,
-		      double **Hessian,
+		      float **Hessian,
 		      // float *eigen_B, float *B_CA, float *Cart_collectivity
 		      // INPUT:
 		      int N,           //degrees of freedom
@@ -57,20 +51,20 @@ int Compute_Bfact_ANM(float *B_CA, float *eigen_B, float *eigen_value,
 
 /**************************** B factors ************************************/
 
-void Predict_fluctuations(struct Normal_Mode *NM, float *sigma2);
+void Predict_fluctuations(struct Normal_Mode *NM);
 void Print_tors_fluct2(struct Normal_Mode NM, struct axe *axe, int naxe,
 		       struct residue *res, char *nameout1);
-float Compute_correlation(float **Cart_mode, float *sigma2,
+float Compute_correlation(float **Cart_mode, float *one_over_omega2,
 			  int N_modes, int i1, int i2);
 void Compute_anisou(float ***aniso_pred, int N_modes, int N_ref,
-		    float *sigma2, float **Cart_mode);
+		    float *one_over_omega2, float **Cart_mode);
 
 
 /*********************************  TNM ************************************/
 void Normal_modes_TNM(// OUTPUT:
 		      float *eigen_value, float **eigen_vector,
 		      float **Masswtd_evector, float **Cart_mode,
-		      double **Hessian,
+		      float **Hessian,
 		      // INPUT:
 		      int N,           //degrees of freedom
 		      struct interaction *Int_list, int N_int,
@@ -78,7 +72,7 @@ void Normal_modes_TNM(// OUTPUT:
 		      struct axe *axes, int N_axes,
 		      struct chain *chains, int Nchain,
 		      float *mass_coord, int N_ref);
-void Compute_Hessian_TNM(double **Hessian, double **T_sqrt, float **T_sqrt_inv,
+void Compute_Hessian_TNM(float **Hessian, double **T_sqrt, float **T_sqrt_inv,
 			 struct interaction *Int_list, int N_int,
 			 atom *atoms, int N_atoms, struct axe *axes,
 			 int nmain, int N_axes, int N_modes,
@@ -96,9 +90,6 @@ void Transform_tors_modes_old(float *Tors_mode, float *Masswtd_Tors_mode,
 void Convert_torsion2cart(float *Cart_mode, atom *atoms, float *u_a,
 			  struct axe *axes, int N_axes,
 			  struct Reference Ref, int ia);
-void Convert_torsion2cart_old(float *Cart_mode, atom *atoms, float *u_a,
-			  struct axe *axes, int N_axes, int *atom_ref,
-			      int N_ref, struct Jacobian *J);
 int Convert_cart2torsion(struct Tors *Diff, struct Reference Ref,
 			 struct Jacobian *J);
 int Convert_cart2torsion_fit(struct Tors *D, struct Reference Ref,
@@ -107,16 +98,16 @@ int Convert_cart2torsion_fit(struct Tors *D, struct Reference Ref,
 int Convert_cart2torsion1(float *Tors_dev, float *Masswtd_Tors_dev,
 			  float *Cart_dev, struct Reference Ref,
 			  struct Jacobian *J);
-void Compute_MW(float *MW_Tors, float *Tors, struct Jacobian *J);
+void Compute_MW(struct Tors *D, struct Jacobian *J);
 float Tors_fraction(struct Tors *Diff, float *mass);
 float Convert_cart2torsion_old(float *Tors_dev, float *Masswtd_Tors_dev,
-			       float *Cart_dev, int N_axes, int N_Cart,
+			       float *Cart_dev, int N_axes, int N_cart,
 			       double **T_sqrt, double **T_sqrt_inv,
 			       double **Jacobian_ar, float *mass);
 void Rescale_eigenvector(float *eigen_vector, float *Masswtd_evector,
 			 int N, double **T_sqrt);
-float Compute_Max_dev(float *Cart_mode, float omega2, int N_Cart,
-		      float *inv_sq_mass);
+float Compute_Max_dev(float *Cart_mode, float omega2, int N_cart,
+		      float KAPPA, float *inv_sq_mass);
 int Compute_Bfact_TNM(float *B_CA, float *eigen_B, float *eigen_value,
 		      float **Cart_mode, int N, int N_CA, float mass);
 
@@ -138,20 +129,17 @@ void Principal_axis_frame(atom *atoms, int N_atoms, int *atom_ref,
 void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 		 struct Reference Ref);
 		 //int *atom_ref, double *mass_ref, int N_atom_ref);
-/*int Set_reference_ali(// Output:
+int Set_reference_ali(// Output:
 		      int *atom_ref1, float *mass_atom, int *atom_ref2,
 		      // Input:
 		      int ini_ref, char *SEL, int *alignres,
 		      atom *atoms1, int ini1, int natoms1, int ini_res1,
 		      atom *atoms2, int ini2, int natoms2, int ini_res2);
-*/
 int Set_reference(// Output:
 		  struct Reference *Ref,
 		  // Input:
 		  int ini_ref, char *SEL, atom *atoms, int ini1, int N_atoms);
 void Empty_Ref(struct Reference *Ref);
-int Align_references(struct ali_atoms *ali_atoms,
-		     struct Reference Ref1, atom *atoms1);
 
 int Internal_Jacobian(// Output:
 		      struct Jacobian J,
@@ -175,12 +163,22 @@ int Kinetic_sqrt(struct Jacobian *J, int *N_kin,
 //int Kinetic_sqrt(double **T_sqrt, double ***T_sqrt_inv, int *N_kin,
 //		 int N, int CONTROL, float E_MIN);
 
-void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_Cart);
+void Allocate_Jacobian(struct Jacobian *J, int N_axes, int N_cart);
 void Empty_Jacobian(struct Jacobian J);
 
-
+/*******************************  Go model  *********************************/
+int Interactions(struct interaction *Int_list, char *atom_type, float thr,
+		 atom *atoms, int N_atoms, int N_res);
+int Interactions_hnm(struct interaction *Int_list, char *atom_type, float thr,
+		     atom *atoms, int N_atoms, int N_res);
+int Interactions_all(struct interaction *Int_list, float thr,
+		     atom *atoms, int N_atoms, int N_res);
+int Interactions_all_CB(struct interaction *Int_list, float thr,
+			atom *atoms, int N_atoms, int N_res);
+int Interactions_HB(struct interaction *Int_list, float thr,
+		    atom *atoms, int N_atoms, int N_res,
+		    float thr_HB, float cos_HB, float ene_HB);
 float Distance_square(double *r1, double *r2);
-
 
 /************************ Auxiliary computation ****************************/
 // atoms
@@ -192,7 +190,7 @@ float Mass_atom(char *atom_name);
 
 void gaussj0(float **a, int n,float **b, int m);
 // Tests
-void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_Cart,
+void Compare_modes(float **Cart_mode_ANM, float **Cart_mode_TNM, int N_cart,
 		   float **Tors_mode_ANM, float **Tors_mode_TNM, int N_tors,
 		   float *mass_coord, char *prot_name, char *inter);
 int Test_Eckart(float *Cart_dev, atom *atoms, int N_atoms,
@@ -228,10 +226,10 @@ void Print_PDB_3(float *Cart_mode, float eigen_value, float eigen_B,
 
 void Print_B(float *B, int nca, FILE *file_out, char *model, float cc);
 void Name3(char *aaname3, int i_aa);
-void Print_B_fact(float *B_TNM, float *B_pred_all, float *B_exp,
-		  int N, atom *atoms,  int *atom_ref, struct residue *seq,
-		  char *name, char *what,float cc,float slope,
-		  float *dof, char ridge);
+void Print_cart_fluct0(float *B_TNM, float *B_pred_all, float *B_exp,
+		       int N, atom *atoms,  int *atom_ref, struct residue *seq,
+                       char *name, char *what,float cc,float slope,
+		       float *dof, char ridge);
 /* Other
 extern void f_Diagonalize(int N, float **MATRIX, float *eigen_values,
 			  float **eigen_vector, int SIGN, float E_MIN);
@@ -240,23 +238,20 @@ extern void d_Diagonalize(int N, double **MATRIX, float *eigen_values,
 extern void dd_Diagonalize(int N, double **MATRIX, double *eigen_values,
 			   double **eigen_vector, int SIGN, float E_MIN);
 */
-
-float Force_constant(float r);
 void Compute_force(struct Tors *Force, float *cc, struct Normal_Mode NM);
 
 void Torsional_force(struct Tors Force, struct Tors *Diff,
-		     double **Hessian, int N_axes,
+		     float **Hessian, int N_axes,
 		     int N_ref, int *atom_num,
 		     float **Jacobian_ar, int N_int,
 		     struct interaction *Int_list,
 		     atom *atoms, int natoms);
 
 void Cartesian_force(float *Cart_force, float *atom_diff,
-		     double **Hessian,int N_Cart);
+		     float **Hessian,int N_cart);
 
-//double Mean_Cart_coll; // Mean collectivity of normal modes
-//double Coll_thr_cc;    // Minimal collectivity for conformation change
+double Mean_Cart_coll; // Mean collectivity of normal modes
+double Coll_thr_cc;    // Minimal collectivity for conformation change
+char REF_CC[5]; // Reference atoms for computing conformation change
 void Tors_outliers(int *outlier_tors, int naxe, int *outlier, int Na,
 		   struct axe *axe, struct chain *chains, int Nchain);
-
-#endif

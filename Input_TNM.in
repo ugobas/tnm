@@ -17,7 +17,7 @@
 #PDB1= /data/ortizg/databases/pdb/132l.pdb
 #PDB1= /data/ortizg/databases/pdb/2wb4.pdb
 #PDB1= /data/ortizg/databases/pdb/1amq.pdb
-PDB1= /data/ortizg/databases/pdb/1l63.pdb
+PDB1= /data/ortizg/databases/pdb/1zio.pdb
 CH1=  A  (A, ABCDE, ALL)
 #If the conformation change between two proteins is required, it must be
 #specified with the records "PDB2" and "CH2", e.g.
@@ -30,8 +30,8 @@ CH1=  A  (A, ABCDE, ALL)
 #PDB2= /data/ortizg/databases/pdb/175l.pdb
 #PDB2= /data/ortizg/databases/pdb/2wb4.pdb
 #PDB2= /data/ortizg/databases/pdb/1qir.pdb
-PDB2= /data/ortizg/databases/pdb/1cv1.pdb 245l.pdb
-CH2= A
+#PDB2= /data/ortizg/databases/pdb/1cv1.pdb 245l.pdb
+#CH2= A
 #BINDING= A
 #FOLDING=1
 #
@@ -106,11 +106,11 @@ ANGLE= 0.05           ! Angular step for greedy confchange
 #
 # 3E) Mutation
 #
-PRED_MUT=0             ! Predict RMSD of all possible mutations?
+PRED_MUT=2             ! Predict RMSD of all mutations? 1= from WT 2= all pairs
 MUT_PARA=Mutation_para.in  ! File with mutation parameters
 NMUT=-1                ! Number of mutations for analyzing conf.change as mut
 # If NMUT==-1 the analysis is run irrespective of number of mutations
-RMSD_MIN=0.1           ! Minimum RMSD for running analysis
+RMSD_MIN=1.1           ! Minimum RMSD for running analysis
 #
 # 3F) DYNAMICAL COUPLINGS
 # ====================================

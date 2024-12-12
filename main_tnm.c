@@ -856,7 +856,7 @@ int main(int argc , char *argv[]){
   if(LABEL){strcat(nameout1,"_"); strcat(nameout1,fullmodel);}
   // UUU: Restore the option of the full name
 
-  sprintf(summary1, "%s.tnm.summary.dat", nameout1);   
+  sprintf(summary1, "%s.summary.dat", nameout1);   
   if(Check_make_dir(outdir)){
     char tmp2[400]; sprintf(tmp2, "%s", summary1);
     sprintf(summary1, "%s/", outdir); strcat(summary1, tmp2);
@@ -1573,7 +1573,7 @@ int main(int argc , char *argv[]){
       Print_mode_PDB(atoms1, natoms1, axe1, naxe1, bonds, seq1,
 		     NM.Tors[ia], NM.omega[ia], N_STEP,
 		     Para_simul, nameout1, ia, ip);
-      ip++; if(ip==N_print)break;
+      ip++; if(ip==N_MODE_PRINT)break;
     }
     Set_bonds_measure(bonds, natoms1, atoms1);
     printf("Printing modes as PDB. Time= %.2lf sec.\n", (clock()-t0)/nbtops);

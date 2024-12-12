@@ -1337,12 +1337,12 @@ void Predict_mutations(struct Normal_Mode NM, float KAPPA,
       for(a=0; a<20; a++){
 	if(a!=wt){p=exp(-x[a]); sum+=x[a]*p; norm+=p;}
       }
-      x[wt]=sum/norm;
+      if(norm){x[wt]=sum/norm;}else{x[wt]=0;}
       sum=0; norm=0; x=MSD;
       for(a=0; a<20; a++){
 	if(a!=wt){p=exp(-x[a]); sum+=x[a]*p; norm+=p;}
       }
-      x[wt]=sum/norm;
+      if(norm){x[wt]=sum/norm;}else{x[wt]=0;}
     }
     for(a=0; a<20; a++){
       float RMSD_mut=sqrt(MSD[a]);
