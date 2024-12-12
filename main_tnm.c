@@ -734,14 +734,16 @@ int main(int argc , char *argv[]){
 		 &Nchain, SEQID_THR,
 		 chains1, Nchain1, seq1, pdbid1,
 		 chains2, Nchain2, seq2, pdbid2);
-    str_mut=malloc(8*Nmut*sizeof(char));
-    strcpy(str_mut, "");
-    for(i=0; i<Nmut; i++){
-      char mmut[8];
-      sprintf(mmut,"%c%d%c ", AAwt[i], Posmut[i], AAmut[i]);
-      strcat(str_mut, mmut);
+    if(Nmut){
+      str_mut=malloc(8*Nmut*sizeof(char));
+      strcpy(str_mut, "");
+      for(i=0; i<Nmut; i++){
+	char mmut[8];
+	sprintf(mmut,"%c%d%c ", AAwt[i], Posmut[i], AAmut[i]);
+	strcat(str_mut, mmut);
+      }
+      printf("%d mutations found: %s\n", Nmut, str_mut);
     }
-    printf("%d mutations found: %s\n", Nmut, str_mut);
     if((NMUT>=0)&&(Nmut!=NMUT)){
       printf("WARNING, %d mutations found, %d expected. ", Nmut, NMUT);
       printf("If you want that the analysis is run, please ");
