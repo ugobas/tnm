@@ -146,6 +146,5 @@ void Anharmonicity_analysis(float *Anharmonicity, int *direction,
 			    atom *atoms, int natoms, struct residue *seq,
 			    int nres, int *atom_num, int N_ref);
 
-void Empty_Normal_modes(struct Normal_Mode NM);
 
 #endif

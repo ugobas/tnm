@@ -8,13 +8,21 @@ General description
 ==========================
 The program tnm computes the normal modes of protein structure <pdb1> in the space of torsion angles and other relevant internal coordinates such as inter-chain rigid body degrees of freedom and pseudo-bonds between protein regions separated by disordered loops. These normal modes are used for computing statistical mechanics in the harmonic approximation.
 
+==========================================
+Compiling (unix system):
+Store tnm.zip in a new older of your computer and run the following:
+>unzip tnm.zip
+>make
+>cp tnm <your binary file folder>
+
+=========================================================
 The analysis performed includes:
 
 * For a single conformation <pdb1>:
 - Print normal modes as movies in PDB files (if specified by the user) and as vectors of Cartesian and torsional displacements.
 - Predict residue-specific flexibility (B factors)
 - Simulate ensembles of structures with predefined amplitudes and anharmonic energy below a threshold
-- Predict structural effects of all possible mutations: RMSD from wild-type structure and energy barrier between mutated structure and wild-type one.
+- Predict structural effects of all possible mutations: RMSD from wild-type structure and energy barrier DE between mutated and wild-type native structures.
 - Predict dynamical couplings for all residues, such as for predicting the fluctuations of inter-residue distances
 - Predict dynamical couplings between and among residues in binding sites specified in the PDB or specified in an external file
 - Perform anharmonicity analysis for all normal modes
@@ -193,10 +201,34 @@ The program outputs a summary of the projection in a file called
 Summary_<....>.dat, mode by mode projections in <...>.dat, and the
 <nmodes> lowest normal modes.
 
+Command line OPTIONS:
+       -h prints this help
+       -c1 <chain_id1>  all:read all chains, A, AB..
+       -p2 <pdbfile2> for conformation change
+       -c2 <chain_id2>  all:read all chains, A, AB..
+       -ref Reference atoms Allowed: ALL (default), CA CB BB EB
+       -omega  Use also omega angle as degree of freedom
+       -anm use ANM d.o.freedom (by default TNM is used)
+       -cont_type Interaction models: MIN (default) CA CB ALL HYD HB
+       -cont_thr Distance threshold default: 4.5
+       -expo <e> k~r^(-e) Default: 6
+       -hnm HNM (ref=CA, cont_type=CA, e=6, covalent)
+       -debug  print debugging information
+       -modes <number of printed modes
+       -print_pdb  Print modes in PDB format
+       -print_confchange Print conformation change as PDB
+       -print_force  Print force producing the c.change
+       -force     Input PDB file with force as coordinates
+       -pred_mut  Print RMSD and DE caused by all possible mutations
+       -mut_para <file with parameters of mutation model>
+       -simul    <Num. simulated structures>
+       -couplings Compute dynamical couplings
+
+
 RUNNING WITH CONFIGURATION FILE (RECCOMENDED)
 =============================================
 
->tnm Input_TNM.in
+>tnm -file Input_TNM.in
 A template configuration file Input_TNM.in is provided in the tnm.zip archive
 
 FORMAT of the configuration file Input_TNM.in:
@@ -296,20 +328,20 @@ ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
 SIGMA= 1.5 		! if(ALL_PAIRS==0), couplings are printed if
 #      			!                    c_ij >/< <c>+/- SIGMA*st.dev.
 PRINT_DEF_COUPLING=0	! Print deformation couplings
+# Output file: <>_deformation_coupling.dat
 # Deformation coupling A_ij is the deformations produced on site j by a
 # unitary force applied in j in the direction that maximizes the deformation.
-# Output file: <>_deformation_coupling.dat
 PRINT_DIR_COUPLING= 0	! Print directionality couplings
+# Output file: <>_directionality_coupling.dat
 # Directionality coupling D_ij is the Boltzmann average of the scalar
 # product of the direction of motion of the residues i and j. If it is
 # positive the two residues tend to move in the same direction.
-# Output file: <>_directionality_coupling.dat
 PRINT_COORD_COUPLING=1			  ! Print coordination couplings
+# Output file: <>_coordination_coupling.dat
 # Coordination coupling C_ij is the Boltzmann average of the RMS
 # fluctuations of the distance d_ij with respect to the equilibrium value.
 # If it is small the two residues maintain an almost fixed distance during
 # their dynamics.
-# Output file: <>_coordination_coupling.dat
 PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
 # Note that the coordination coupling is Coord_ij= 1.-0.5*sqrt(Var(Dij))
 SITES=<file_site>	! File where functional sites are read.
@@ -317,7 +349,8 @@ SITES=<file_site>	! File where functional sites are read.
 # The program computes the mean and the significance of the coupling of pairs
 # of residues within (<>_binding_sites.dat) and between (<>_pairs_sites.dat)
 # functional sites
-# format of <file_site>: SITE(num) AA(3 letters) CHAIN RESNUM(as in PDB)
+# format of <file_site>:
+# SITE(num) AA(3 letters) CHAIN RESNUM(as in PDB)
 # Example (delete the # symbol from the following lines):
 #SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323                 
 #1	ASP	A	127
