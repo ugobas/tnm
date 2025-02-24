@@ -1,26 +1,36 @@
-Program tnm (torsional network model)
-==========================================
+# Program tnm (torsional network model)
+
 Author: Ugo Bastolla Centro de Biologia Molecular Severo Ochoa (CSIC-UAM), Spain
 e-mail ubastolla@cbm.csic.es
 Please cite Mendez R, Bastolla U. Phys Rev Lett. 2010 104:228103.
 
-General description
-==========================
+## General description
+
 The program tnm computes the normal modes of protein structure <pdb1> in the space of torsion angles and other relevant internal coordinates such as inter-chain rigid body degrees of freedom and pseudo-bonds between protein regions separated by disordered loops. These normal modes are used for computing statistical mechanics in the harmonic approximation.
 
-==========================================
-Compiling (unix system):
-Store tnm.zip in a new older of your computer and run the following:
->unzip tnm.zip
->make
->cp tnm <your binary file folder>
+## Installation (unix system):
 
-=========================================================
-The analysis performed includes:
+You have to run the following on your computer:  
+Download tnm.zip from  https://github.com/ugobas/tnm/
+It is recommended to download tnm.zip in an empty folder called TNM 
+Run the following:  
 
-* For a single conformation <pdb1>:
+```sh  
+mkdir TNM
+mv tnm.zip TNM  
+cd TNM  
+unzip tnm.zip
+make  
+cp tnm <to your binary file folder>
+```  
+
+## Performed computations:
+
+Model parameters and required analysis can be given both through command line options and through configuration file (example: Input_TNM.in), overridden by command line
+
+### For a single conformation <pdb1>:
 - Print normal modes as movies in PDB files (if specified by the user) and as vectors of Cartesian and torsional displacements.
-- Predict residue-specific flexibility (B factors)
+- Predict residue-specific flexibility (related to B factors)
 - Simulate ensembles of structures with predefined amplitudes and anharmonic energy below a threshold
 - Predict structural effects of all possible mutations: RMSD from wild-type structure and energy barrier DE between mutated and wild-type native structures.
 - Predict dynamical couplings for all residues, such as for predicting the fluctuations of inter-residue distances
@@ -28,18 +38,13 @@ The analysis performed includes:
 - Perform anharmonicity analysis for all normal modes
 - Estimate binding free energy between two sets of protein chains in a complex
 
-* Additionally, for a conformational change
+### Additionally, for a conformational change
 (two pdb structures <pdb1> <pdb2> with similar sequence):
 - Correlation between conformational change and predicted dynamics at the level of Cartesian fluctuations, torsional fluctuations and projections on normal modes.
 - Deviation from the null model of linear response, expressed in terms of the ratio between the harmonic energy barrier of the observed conformation change (DE) and of 200 random conformational changes (DE_ran). DE significantly lower than DE_ran suggests that the conformation change is functional.
 - If the two sequences are related by the specified number of mutations, it estimates the mutational parameters that produces the observed conformational change and predicts the conformational change produced with the input mutational parameters.
 
-Custom settings: Analysis (see also the sample input file Input_TNM.in at the end of this file for examples of the output parameters)
-----------------------
-3A) GENERAL
-
-If LABEL=1 the program prints the model param. in the names of output files.
-The program prints a self-explanatory summary of the results in the <>_summary.dat file.
+### A) ATOMIC FLUCTUATIONS
 
 If FIT_B=1, the force constant of the model is fitted from the B-factors, if present, modelling B-factors as the contribution of rigid-body degrees of freedom (9 fitted parameters) plus internal fluctuations (1 additional parameter, inversely proportional to the force constant) and regularizing the fit through our method of rescaled ridge regression (Dehouck and Bastolla Integr Biol 2017 https://pubmed.ncbi.nlm.nih.gov/28555214/).
 
@@ -51,22 +56,22 @@ If requested, the contact matrix is printed in the .cm file.
 
 If ANHARMONIC=1, anharmonic analysis is performed for all modes, moving the conformation along the normal mode, computing its anharmonic energy, and computing the Boltzmann average of the normal mode coordinate using the anharmonic energy as Boltzmann weight and the Kullback-Leibler divergence between the harmonic and anharmonic weights. The summary analysis and the analysis of conformational changes is performed both with the harmonic and with the anharmonic ensemble. These computations are slow and they do not improve the results, so ANHARMONIC=0 is reccomended
 
-......................................................
-3B) NORMAL MODES
+If LABEL=1 the program prints the model parameters in the names of output files.
+The program prints a self-explanatory summary of the results in the <>_summary.dat file.
+
+### B) NORMAL MODES
 The user can specify the number of printed *normal modes* with the option NMODES=<value> (default is zero).
 The modes are printed as movies in PDB files if PRINT_PDB=1 (default is 0) as snapshots with at least RMSD_STEP=<value> (default 0.4) RMSD from the previous one until the maximum amplitude AMPLITUDE=<value> or until the repulsion energy reaches E_THR=<value>.
 
 The file <>_Modes.dat reports several properties of each normal mode: contribution to thermal fluctuations individual and cumulative, contribution to the analyzed conformation change (if any, see below) computed through rescaled ridge regression individual and cumulative, inverse frequency squared omega^(-2), RMSD produced by the normal mode, collectivity (fraction of degrees of freedom displaced by the mode computed as exponential of the Shannon entropy divided by the number of degrees of freedom) in Cartesian space, torsion space mass-weighted, and torsion space, and maximum deviation produced by the normal mode, which is correlated with the RMSD.
 
-...........................................
-3C) SIMULATED CONFORMATIONS
+### C) SIMULATED CONFORMATIONS
 
 The program prints SIMUL=<value> (default zero) conformations sampled from the TNM ensemble for different amplitudes (in units of the predicted thermal fluctuations) from AMPL_MIN=<value> to AMPL_MAX=<value> increasing by the factor AMPL_FACT=<value>. Each simulated amplitude is printed in the <>_AMPL_simul.pdb file.
 
 The generated conformations are tested for their anharmonic energy (for all contributing normal modes) and printed only if the anharmonic Boltzmann weight is larger than 1./(4*SIMUL) (i.e. they are not extreme outliers of the Bolzmann ensemble with SIMUL simulated structures) and the RMSD is not smaller than 0.1 of the expected RMSD under the prescribed amplitude. If for some amplitude the acceptance rate is smaller than 0.02 the program stops the computation. The properties of all simulated structures (RMSD, energy, number of contributing modes), accepted or not, are printed in the <>_AMPL_simul.dat file.
 
-.............................................................
-3D) ANALYSIS OF CONFORMATIONAL CHANGES
+### D) ANALYSIS OF CONFORMATIONAL CHANGES
 
 The user can specify a *conformational change* by providing the input to a second PDB (PDB2=<path_to_second_pdb>, CH2=<chain>). The sequences of the two proteins are aligned and the structures of the aligned residues are optimally superimposed. The program exits if the resulting RMSD is smaller than RMSD_MIN set by RMSD_MIN=<value> (default 0.5).
 If PRINT_CHANGE=1 is specified the program prints a pdb file with the path of the conformational change generated only through displacements in torsion angles and inter-chain degrees of freedom. 
@@ -76,8 +81,7 @@ Given the Cartesian conformational change for all reference atoms, the program c
 The Summary (<>.summary.dat) file reports the correlation of the projections of the torsional conformation changes on the torsional normal modes, c_alpha, with the normal mode frequencies omega_alpha, r[c^2,1/w^2], and the excess correlations with respect to the null-model expectation based on linear response theory, r[(c*w)^2,1/w^2], with the corresponding significance, Significance(Z), which can be interpreted as evidence that the conformational change is target of natural selection. The number of normal modes that effectively contribute to the conformational change are reported as Recp.Coll(cc) and the mode that contributes most is reported as Most_contr.mode(cc).
 If PRINT_FORCE=1 is specified the program prints as a PDB file the force that is required to generate the torsional conformation change computed with method (4).
 
-................................................
-3E) PREDICTION AND ANALYSIS OF MUTATION
+### E) PREDICTION AND ANALYSIS OF MUTATION
 
 If PRED_MUT=1, the program predicts the effect of all possible mutation in terms of predicted RMSD of the mutated structure (<>_mut_RMSD.dat) and predicted harmonic energy barrier between the wild-type structure and the mutated structure (<>_mut_DE.dat). In these files, every line represents the mutated amino acid, its number of native contacts and 20 additional columns with the predicted effect of the mutation.
 The file <>_mut_all.dat represents the scatter plot of RMSD and DE for all possible mutations.
@@ -93,8 +97,7 @@ The parameters A_mut and A_nomut are used to rescale the force constant KAPPA an
 RMSD_all^2=A_mut*RMSD_mut^2+A_nomut*RMSD_nomut^2+offset
 The results of this analysis are output in the <>_pred_mut.dat file.
 
-.........................................................
-3F) DYNAMICAL COUPLINGS
+### F) DYNAMICAL COUPLINGS
 
 The program can be used to compute *dynamical couplings* between all pairs of C-alpha atoms. To this effect ALLOSTERY=1 must be specified. Implemented couplings: (A) deformation coupling (extent by which a perturbation at a residue i modifies the local structure of residue j), computed if PRINT_ALLO_COUPLING=1 and printed in <>_deformation_coupling.dat. (B) Directionality coupling (Boltzmann average of the scalar product of the directions of motions of two residues) computed if PRINT_DIR_COUPLING= 1 and printed in <>_directionality_coupling.dat (C) Coordination coupling (1- 0.5*fluctuation of the interatomic distance) computed if PRINT_COORD_COUPLING=1 and printed in <>_coordination_coupling.dat. If ALL_PAIRS=1, couplings are printed for all pairs, otherwise only values that exceed the mean coupling plus SIGMA times the standard deviation are printed. The default value is SIGMA=1.0. In the coupling file, each residue is labeled by an integer number. The correspondence between labels and residue number, residue type and chain label is reported in the file <>_names.dat.
 
@@ -102,7 +105,8 @@ For each coupling, the program can print the corresponding *profile* (one value 
 
 It is possible to specify a list of *functional sites* in the file specified by SITES=<file>. If no file is specified, the binding sites reported in teh PDB file are used, if present. For each binding site, the average couplings between the residues that belong to the site are reported, as well as their P-value (fraction of 1000 randomly generated sites with coupling larger than the functional site), in the file <>_binding_sites.dat, and the average couplings between residues of two different sites and the corresponding P-values are reported in the file <>_pairs_sites.dat
 
-3G) ANALYSIS OF BINDING
+### G) ANALYSIS OF BINDING
+
 It is possible to specify in the configuration file some chains that are interpreted as the ligand of the other chain by setting:
 BINDING= C
 If the complex consists of the chains ABC, the program will estimate the binding free energy between chains AB and chain C. 
@@ -136,237 +140,92 @@ Temperature:          100 K
 
 We expect that, for FIT_B=1, the force constant is approximately inversely proportional to T. However, this relation is not verified in real data but there is a large variation of KAPPA for experiments obtained at the same temperature (typically, 100K is rather frequent).
 
- 
-Custom settings: MODEL
-----------------------------------------------
-The following settings can be modified by the user by editing the configuration file. The best results are obtained with the default settings.
+## MODEL PARAMETERS 
 
-PDB CHAIN
+The following settings can be modified by the user either by editing the configuration file or through command line
+
+### PDB CHAIN
 ..........
 The analyzed structure is set by providing the path of the PDB file as PDB1=<local_path_to_pdb>. The program considers either the first chain in the PDB file (default), a specified chain (e.g. CH1=B), a set of chains (e.g. CH1=ABCDE), or all chains in the PDB (CH1=ALL).
 
-DEGREES OF FREEDOM
-...................
+### DEGREES OF FREEDOM
+
 The user can select the *degrees of freedom* that are allowed to move. Besides rigid body degrees of freedom between different chains and between parts of the same chain separated by a disordered loop, these are main chain torsion angles phi and psi (default), only phi (PSI=0), also main-chain omega angle (OMEGA=1), also side-chain torsion angles (SIDECHAIN=1). Side chain degrees of freedom are considered only if they are constrained by at least MIN_INT contacts (default 1). Counter-intuitively, the fewer the degrees of freedom (PSI=0) the better the results.
 
-REFERENCE ATOMS FOR KINETIC ENERGY COMPUTATION
-...............................................
+### REFERENCE ATOMS FOR KINETIC ENERGY COMPUTATION
+
 The user can select the *reference atoms* that are used to compute the kinetic energy and the Eckart conditions that eliminat global rigid body degrees of freedom. The default is all heavy atoms (REF=ALL), allowed choices are extended backbone atoms (REF=EB i.e. N-CA-C-O-CB), strict backbone atoms (REF=BB i.e. N-CA-C), only beta-carbons (REF=CB C-alpha for Glycine) or only alpha-carbons (REF=CA). The best results are obtained with the default (all atoms).
 
-CONTACT DEFINITION
-......................
+### CONTACT DEFINITION
+
 The *potential energy* is computed based on native contacts computed with all atoms, considering only the pair of atoms at minimum distance for a given pair of residue (CONT_TYPE=MIN, default), based on all atoms, with more than one pair of interacting atoms for each pair of residues (CONT_TYPE=ALL), based on C-beta atoms (CONT_TYPE=CB, C-alpha is used for Glycine), based on C-alpha atoms (CONT_TYPE=CA), based on screened interactions (CONT_TYPE=DIR), based on a model that scores differently the hydrogen bonds (CONT_TYPE=HB) or based on the elastic network model by Hinsen (CONT_TYPE=HNM). The best results are obtained with the MIN scheme. The threshold for the contact cut-off can be set through the CONT_THR=<value> record, default 4.5. The force constant is modelled as a decreasing power of the distance of the interacting atoms in the PDB structure with exponent set by EXP_HESSIAN=<value> (default is 6, which gives the best results).
 
-TORSIONAL SPRINGS
-....................
+### TORSIONAL SPRINGS
+
 The elastic constants of the flexible degrees of freedom can be set by K_PHI=, K_PSI=, K_OMEGA=, K_CHI= for torsion angles and K_BL=, K_BA= for bond lengths and bond angles.
 
-GLOBAL FORCE CONSTANT PARAMETER
-................................
+### GLOBAL FORCE CONSTANT PARAMETER
+
 The amplitude of the normal modes at the temperature of the computation are set by the rescaled ridge regression fit of the experimental B-factors with the atomic fluctuations predicted by the model if FIT_B=1 is specified, otherwise they are internally computed with default values of the force constant if FIT_B=0 or if B-factors are absent. Better results are obtained with FIT_B=1.
 
-AVOID ZERO EIGENVALUES AND MODES THAT MOVE TOO FEW ATOMS
-.........................................................
+### AVOID ZERO EIGENVALUES AND MODES THAT MOVE TOO FEW ATOMS
+
 To avoid vanishing eigenvalues due to numerical errors, normal modes are discarded if their eigenvalue is omega^2 < E_MIN <omega^2> (the mean value of the eigenvalue for all modes). Default is E_MIN=0.0000001. Modes with low collectivity that move fewer than COLL_THR Cartesian degrees of freedom are discarded (default is COLL_THR=80 roughly corresponding to 4 residues when REF=ALL atoms. This parameter has not been really optimized).
 
-Compilation
-===========
-To compile, save into your chosen installation directory and run
->unzip tnm.zip
->make
-(you may want to change the compilation options in the Makefile)
->cp tnm /bin/
-(copy to a binary files directory contained in your PATH, as specified for instance in the ~/.tcshrc file)
+## RUNNING WITH CONFIGURATION FILE 
 
-RUNNING FROM COMMAND LINE
-===========================
-Fast way to run the program, but not all capabilities are enabled.
-It is reccomended to run the program with configuration file (see below)
-
-Use the program to compute normal modes of one or more chains:
-
->tnm -p1 <pdb1> -c1 <chain1> -modes <nmodes>
-
-The program computes tnm modes of chain <chain1> (default: first chain)
-of pdb file and prints the <nmodes> (default: 0) lowest modes in multi-pdb
-files and as torsional and cartesian components.
-If -c1 ALL is used, all chains are used to compute normal modes.
-
-Use the program to project the conformation change from <pdb1> to <pdb2> onto
-the normal modes of <pdb1>:
-
->tnm -p1 <pdb1> -c1 <ch1> -p2 <pdb2> -c2 <ch2> -modes <nmodes>
-
-The program outputs a summary of the projection in a file called
-Summary_<....>.dat, mode by mode projections in <...>.dat, and the
-<nmodes> lowest normal modes.
-
-Command line OPTIONS:
-       -h prints this help
-       -c1 <chain_id1>  all:read all chains, A, AB..
-       -p2 <pdbfile2> for conformation change
-       -c2 <chain_id2>  all:read all chains, A, AB..
-       -ref Reference atoms Allowed: ALL (default), CA CB BB EB
-       -omega  Use also omega angle as degree of freedom
-       -anm use ANM d.o.freedom (by default TNM is used)
-       -cont_type Interaction models: MIN (default) CA CB ALL HYD HB
-       -cont_thr Distance threshold default: 4.5
-       -expo <e> k~r^(-e) Default: 6
-       -hnm HNM (ref=CA, cont_type=CA, e=6, covalent)
-       -debug  print debugging information
-       -modes <number of printed modes
-       -print_pdb  Print modes in PDB format
-       -print_confchange Print conformation change as PDB
-       -print_force  Print force producing the c.change
-       -force     Input PDB file with force as coordinates
-       -pred_mut  Print RMSD and DE caused by all possible mutations
-       -mut_para <file with parameters of mutation model>
-       -simul    <Num. simulated structures>
-       -couplings Compute dynamical couplings
-
-
-RUNNING WITH CONFIGURATION FILE (RECCOMENDED)
-=============================================
-
->tnm -file Input_TNM.in
+```sh
+tnm -file Input_TNM.in
+```
 A template configuration file Input_TNM.in is provided in the tnm.zip archive
 
-FORMAT of the configuration file Input_TNM.in:
-==============================================
-# Lines beginning with # are interpreted as comments.
-#
-# 1) Input proteins
-#==============================
-#The input pdb must be specified in the records "PDB1" and "CH1" 
-#Chain A: CH1= A Default: First chain in PDB file CH1= ALL : all chains, e.g.:
-PDB1= <file.pdb>
-CH1=  ALL  (A, ABCDE, ALL)
-#
-#If the conformation change between two proteins is required, it must be
-#specified with the records "PDB2" and "CH2", e.g.
-PDB2= /data/ortizg/databases/pdb/1ank.pdb
-CH2= A
-#
-# 2) Model parameters (recommended: use the default)
-#===================================================
-# Degrees of freedom:
-LABEL=1                ! Print model parameters in file names
-DOF=  TORS             ! Torsional degrees of freedom (alternative: CART)
-PSI=0                  ! Use psi angle as degree of freedom?
-OMEGA=0                ! Use mainchain omega as degree of freedom? (default:NO)
-SIDECHAIN=0            ! Use sidechain degrees of freedom?
-MIN_INT=1              ! dofs with fewer than MIN_INT interactions are frozen
-# Kinetic energy:
-REF= ALL
-# Atoms used for kinetic energy. Allowed: ALL EB BB CB CA
-# Potential energy
-CONT_TYPE= MIN         ! Contact definition (allowed: MIN DIR SCB CB CA HB HNM) 
-CONT_THR= 4.5          ! Threshold for contacts
-K_PHI=0.2              ! Elastic constant for angle phi
-K_PSI=0.2              ! Elastic constant for angle psi
-K_OMEGA=0.5              ! Elastic constant for angle omega (if present)
-K_CHI=0.4              ! Elastic constant for angle chi (if present)
-K_BL=0.5              ! Elastic constant for bond length
-K_BA=0.5               ! Elastic constant for bond angle
-K_TOR=0.2              ! Elastic constant for torsion angle
-EXP_HESSIAN= 6         ! Force constant: k~r^(-e)
-FIT_B= 1     	       ! Fit B factors if present? (default YES)
-# Normal modes
-E_MIN=0.0000001	       ! Threshold on eigenvalues w^2/<w^2>
-COLL_THR=30            ! Select modes with number of moved atoms > COLL_THR
-#
-# 3) Output
-#===================================================
-#
-# 3A) General
-#----------------------
-PRINT_SUMM= 1		! Print summary of results (1=TRUE)
-PRINT_CONT_MAT=0	! Print contact matrix? (1=TRUE)
-DEBUG=0			! Print debugging information (messy)
-#
-# 3B) Normal modes
-#----------------------
-NMODES=0 5 10		! Number of modes to print (default zero)
-PRINT_PDB= 0		! Print modes as PDB files? (1=TRUE)
-AMPLITUDE=2.0           ! Maximum amplitude of the PDB movie, 
-#                       ! until the repulsion energy reaches E_THR
-E_THR=5.0               ! Maximum allowed rep. energy of generated structures
-D_REP=2.5               ! Maximum distance for computing repulsion energy
-RMSD_STEP=0.2           ! Minimum Rmsd between structures in a movie
-#
-# 3C) Simulated structures of the thermal ensemble
-#-----------------------------------------------
-SIMUL=20 0	       ! Number of simulated structures
-AMPL_MIN= 0.5          ! Minimum amplitude with respect to thermal fluct.
-AMPL_MAX= 4.0          ! Maximum amplitude
-AMPL_FACT=2.0          ! Increase factor between simulated amplitudes
-#
-# 3D) Conformational change
-#---------------------------
-PRINT_CHANGE=0       ! Print movie of conformational change? (slow)
-STEP_MAX= 0.7        ! Maximum RMSD between steps for greedy confchange
-STEP_MIN= 0.001      ! Minimum RMSD between steps for greedy confchange
-NSTEPS= 600          ! Number of steps for greedy confchange
-ANGLE= 0.05          ! Angular step for greedy confchange
-PRINT_FORCE= 0       ! Print the force that would generate the observed
-#                      conformational change
-#
-# 3E) Mutation
-#
-PRED_MUT=0             ! Predict RMSD of all possible mutations?
-MUT_PARA=Mutation_para.in  ! File with mutation parameters
-NMUT=-1                 ! Number of mutations for analyzing conf.change as mut
-# If NMUT==-1 the analysis is run irrespective of number of mutations
-RMSD_MIN=0.1           ! Minimum RMSD for running analysis
-#
-# 3F) DYNAMICAL COUPLINGS
-# ====================================
-ALLOSTERY=0		! Compute dynamical couplings?
-PROF_TYPE=C		! A=average coupling P=Principal eigenvector of coup.
-#			! C= effective connectivity of coup. 
-ALL_PAIRS=0		! Print couplings for all pairs? (1=YES)
-SIGMA= 1.5 		! if(ALL_PAIRS==0), couplings are printed if
-#      			!                    c_ij >/< <c>+/- SIGMA*st.dev.
-PRINT_DEF_COUPLING=0	! Print deformation couplings
-# Output file: <>_deformation_coupling.dat
-# Deformation coupling A_ij is the deformations produced on site j by a
-# unitary force applied in j in the direction that maximizes the deformation.
-PRINT_DIR_COUPLING= 0	! Print directionality couplings
-# Output file: <>_directionality_coupling.dat
-# Directionality coupling D_ij is the Boltzmann average of the scalar
-# product of the direction of motion of the residues i and j. If it is
-# positive the two residues tend to move in the same direction.
-PRINT_COORD_COUPLING=1			  ! Print coordination couplings
-# Output file: <>_coordination_coupling.dat
-# Coordination coupling C_ij is the Boltzmann average of the RMS
-# fluctuations of the distance d_ij with respect to the equilibrium value.
-# If it is small the two residues maintain an almost fixed distance during
-# their dynamics.
-PRINT_SIGMA_DIJ=0       ! Print variance of Dij (only CA atoms)
-# Note that the coordination coupling is Coord_ij= 1.-0.5*sqrt(Var(Dij))
-SITES=<file_site>	! File where functional sites are read.
-# If not specified, read from the SITE record in the PDB file.
-# The program computes the mean and the significance of the coupling of pairs
-# of residues within (<>_binding_sites.dat) and between (<>_pairs_sites.dat)
-# functional sites
-# format of <file_site>:
-# SITE(num) AA(3 letters) CHAIN RESNUM(as in PDB)
-# Example (delete the # symbol from the following lines):
-#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323                 
-#1	ASP	A	127
-#1	ARG	A	162
-#1	MET	A	169
-#1	GLY	A	170
-#1	ARG	A	252
-#SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE MG A 327                  
-#3	GLY	A	185
-#3	GLU	A	187
-#
-#INTERACTION TYPES (CONT_TYPE)
-MIN: At least 2 heavy atoms within threshold
-#SCR: Screened interactions (screening of the atom k that minimizes s=max(d_ik,d_jk) is considered, it generates a weight w=exp((s-d_ij)/t)/[1+exp((s-d_ij)/t)] where t is the tolerance parameter
-#SHA: Shadow interaction (same idea as screened, 3 different implementations S_TYPE=0,1,2)
-#SCB: Same as MIN, but the TNM contraints the distance between the two CB of the itneracting residues.
-#CA, CB: Only distances between CA, CB are checked
-#HB: Same as MIN, but interactions that are due to hydrogen bonds are weighted more
-#HNM: Hinsen Network Model, like ANM with CA interactions but interactions between neighboring residues are weighted more.
+
+## RUNNING FROM COMMAND LINE
+
+```sh
+tnm   
+Command line OPTIONS:
+       -file <configuration_file> (overridden by command line options)
+       -h prints this help
+       -pdb1 <pdbfile1> Mean native structure for computing normal modes
+       -c1 <chain_id1>  ALL:read all chains, A, AB..
+       -pdb2 <pdbfile2> for conformation change
+       -c2 <chain_id2>  ALL:read all chains, A, AB..
+Model set-up:
+       -cont_type Interaction model: MIN (default) CA CB ALL HYD HB
+       -cont_thr Distance threshold default: 4.5
+       -ref Atoms for kinetic energy Allowed: ALL (default), CA CB BB EB
+       -nopsi Use only phi torsion angle
+       -omega  Use also omega angle as degree of freedom
+       -sc Use also sidechains as degrees of freedom
+       -expo <e> force constant k~A*r^(-e) Default: e=6
+       -fit_B Determine the coefficient A of force const by fitting B factors
+       -anm use ANM d.o.freedom (by default TNM is used)
+       -hnm  Hinsen network model: ANM ref=CA cont_type=CA e=6 covalent
+Computations and output:
+       -print_pdb  Print modes as trajectories in PDB format
+       -modes <number of printed modes
+       -pred_mut  Print RMSD and DE produced by all possible mutations
+       -mut_para <file with parameters of mutation model>
+       -print_confchange Print path of conformation change as PDB
+       -print_force  Print force producing the c.change
+       -force     Input PDB file with force as coordinates
+       -couplings Compute dynamical couplings
+       -sites <File with functional sites>
+       -simul    <Num. of simulated structures>
+       -debug  print debugging information
+
+FORMAT of file with functional sites for option -couplings:
+SITE AA (3 letter) CHAIN RESNUM
+Example:
+SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323
+1	ASP	A	127
+1	ARG	A	162
+1	MET	A	169
+1	GLY	A	170
+1	ARG	A	252
+SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE MG A 327
+3	GLY	A	185
+3	GLU	A	187
+```
+
