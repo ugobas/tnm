@@ -2282,6 +2282,13 @@ int getArgs(int argc, char **argv,
       printf("chain(s) to read: %s\n",chain1);
 
       // Model:
+    }else if (strncmp(argv[i],"-cont_type",10)==0){
+      i++; if(i>=argc)continue;
+      strcpy(INT_TYPE, argv[i]);
+    }else if (strncmp(argv[i],"-cont_thr",9)==0){
+      i++; if(i>=argc)continue;
+      sscanf(argv[i], "%f", C_THR);
+      printf("Threshold distance= %.1f\n", *C_THR);
     }else if (strncmp(argv[i],"-anm",4)==0){
       *ANM=1;
     }else if (strncmp(argv[i],"-hnm",4)==0){
@@ -2290,19 +2297,16 @@ int getArgs(int argc, char **argv,
       *SIDECHAINS=1;
     }else if (strncmp(argv[i],"-omega",6)==0){
       *OMEGA=1;
+    }else if (strncmp(argv[i],"-nopsi",6)==0){
+      *PSI=0;
     }else if (strncmp(argv[i],"-ref",4)==0){
       i++; if(i>=argc)continue;
       strcpy(REF, argv[i]);
-    }else if (strncmp(argv[i],"-cont_type",10)==0){
-      i++; if(i>=argc)continue;
-      strcpy(INT_TYPE, argv[i]);
     }else if (strncmp(argv[i],"-expo", 5)==0){
       i++; if(i>=argc)continue;
       sscanf(argv[i], "%f", &EXP_HESSIAN);
-    }else if (strncmp(argv[i],"-cont_thr",9)==0){
-      i++; if(i>=argc)continue;
-      sscanf(argv[i], "%f", C_THR);
-      printf("Threshold distance= %.1f\n", *C_THR);
+    }else if (strncmp(argv[i],"-fit_B", 6)==0){
+      *FIT_B=1;
     }else if (strncmp(argv[i],"-nokin",6)==0){
       KINETIC=0;
 
@@ -2333,6 +2337,9 @@ int getArgs(int argc, char **argv,
       i++; strcpy(Mut_para, argv[i]);
     }else if (strncmp(argv[i],"-couplings",8)==0){
       *ALLOSTERY=1;
+    }else if (strncmp(argv[i],"-sites",6)==0){
+      i++; if(i>=argc)continue;
+      sscanf(argv[i], SITES);
     }else if (strncmp(argv[i],"-print_confchange",13)==0){
       *PRINT_CONFCHANGE=1;
     }else if (strncmp(argv[i],"-print_force",12)==0){
@@ -2634,12 +2641,22 @@ void help(void)
 	  "       -c1 <chain_id1>  all:read all chains, A, AB..\n"
 	  "       -pdb2 <pdbfile2> for conformation change\n"
 	  "       -c2 <chain_id2>  all:read all chains, A, AB..\n"
-	  "       -ref Reference atoms Allowed: ALL (default), CA CB BB EB\n"
-	  "       -omega  Use also omega angle as degree of freedom\n"
-	  "       -anm use ANM d.o.freedom (by default TNM is used)\n"
-	  "       -cont_type Interaction model: MIN (default) CA CB ALL HYD HB\n"
+          "Model specification:\n"
+	  "       -cont_type Interact. model: MIN (default) CA CB ALL HYD HB\n"
 	  "       -cont_thr Distance threshold default: %.1f\n"
-	  "       -expo <e> k~r^(-e) Default: %.0f\n"
+	  "       -ref Atoms for kinetic energy: ALL (default) CA CB BB EB\n"
+	  "       -omega  Use also omega angle as degree of freedom\n"
+	  "       -nopsi Use only phi torsion angle\n"
+	  "       -omega  Use also omega angle as degree of freedom\n"
+	  "       -sc Use also sidechains as degrees of freedom\n"
+	  "       -expo <e> force constant k~r^(-e) Default: e=%.1f\n"
+	  "       -fit_B Determine the coefficient A of force const by fitting B factors\n"
+          "       -anm use ANM d.o.freedom (by default TNM is used)\n"
+	  "       -hnm Hinsen network model: ANM ref=CA cont_type=CA e=6 covalent\n",
+	  PRG, PRG, THR_ALL, EXP_HESSIAN);
+
+  fprintf(stderr,
+	  "Computations and output:\n"
 	  "       -print_pdb  Print modes in PDB format\n"
 	  "       -modes <number of printed modes\n"
 	  "       -pred_mut  Print RMSD and DE produced by all possible mutations\n"
@@ -2648,10 +2665,23 @@ void help(void)
 	  "       -print_force  Print force producing the c.change\n"
 	  "       -force     Input PDB file with force as coordinates\n"
 	  "       -couplings Compute dynamical couplings\n"
+	  "       -sites <File with functional sites for couplings computations>\n"
 	  "       -simul    <Num. simulated structures>\n"
-	  "       -hnm HNM (ref=CA, cont_type=CA, e=6, covalent)\n"
 	  "       -debug  print debugging information\n"
-	  "\n", PRG, PRG, THR_ALL, EXP_HESSIAN);
+	  "\n");
+  printf("FORMAT of file with functional sites for option -couplings:\n"
+	 "SITE AA (3 letter) CHAIN RESNUM\n"
+	 "Example:\n"
+	 "SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE F6P A 323\n"
+	 "1	ASP	A	127\n"
+	 "1	ARG	A	162\n"
+	 "1	MET	A	169\n"
+	 "1	GLY	A	170\n"
+	 "1	ARG	A	252\n"
+	 "SITE_DESCRIPTION:  BINDING SITE FOR RESIDUE MG A 327\n"
+	 "3	GLY	A	185\n"
+	 "3	GLU	A	187\n");
+
 
   exit(1);
 }
