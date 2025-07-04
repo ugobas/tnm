@@ -78,7 +78,7 @@ int IWT=0; // Average rmsd of WT mut over the lowest IWT ones
 char Mut_para[100]="Mutation_para.in";
 
 // Simulation of conformation changes
-#define AMPLITUDE_DEF    1.0  // NM amplitude for simulated structures
+#define AMPLITUDE_DEF    2.0  // NM amplitude for simulated structures
 #define E_THR_DEF        20.0 // Threshold for stopping motion
 #define E_THR1_DEF       1.0  // Threshold for deciding privileged direction
 #define D_REP_DEF        2.5  // Threshold for repulsions
@@ -1550,7 +1550,8 @@ int main(int argc , char *argv[]){
   /********************** Print all modes *****************************/
 
   int N_print=N_MODE_PRINT;
-  if(N_print>NM.N_relevant)N_print=NM.N_relevant;
+  if(N_print>NM.N)N_print=NM.N;
+  printf("Modes to be printed: %d\n", N_print);
   if(N_print){
     Print_modes(N_print, nameout1, "Cart", NM.select, N_Cart,
 		NM.Cart, NM.Cart_coll, NM.sigma2, sum_sigma2, axe1, naxe1,
@@ -2320,6 +2321,10 @@ int getArgs(int argc, char **argv,
       i++; if(i>=argc)continue;
       sscanf(argv[i], "%d", &(Para_simul->N_SIMUL));
       printf("Simulations to be done= %d\n", Para_simul->N_SIMUL);
+    }else if (strncmp(argv[i],"-ampl",6)==0){
+      i++; if(i>=argc)continue;
+      sscanf(argv[i], "%f", &(Para_simul->AMPLITUDE));
+      printf("Maximum amplitude= %.1f\n", Para_simul->AMPLITUDE);
       // Output:
     }else if (strncmp(argv[i],"-outdir",7)==0){
       i++; if(i>=argc)continue;
@@ -2667,8 +2672,9 @@ void help(void)
 	  "       -couplings Compute dynamical couplings\n"
 	  "       -sites <File with functional sites for couplings computations>\n"
 	  "       -simul    <Num. simulated structures>\n"
+	  "       -ampl     <Amplitude of simulated structures> (def %.1f)\n"
 	  "       -debug  print debugging information\n"
-	  "\n");
+	  "\n", AMPLITUDE_DEF);
   printf("FORMAT of file with functional sites for option -couplings:\n"
 	 "SITE AA (3 letter) CHAIN RESNUM\n"
 	 "Example:\n"

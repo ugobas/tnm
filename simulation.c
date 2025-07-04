@@ -172,8 +172,9 @@ int Print_mode_PDB(atom *atoms, int natoms,
   float Ene_thr=100*(Ene+0.1);
 
   // Determine maximum possible factor for mode ia
-  //float factor=Para_simul.AMPLITUDE/(omega*N_STEP);
-  float AMAX=16, factor=AMAX/(omega*N_STEP); // Max amplitude = AMAX
+  float AMAX=20*Para_simul.AMPLITUDE;
+  //float AMAX=16;
+  float factor=AMAX/(omega*N_STEP); // Max amplitude = AMAX
 
   int nstep=N_STEP;
   float MAX_ANGLE=0.15, max_v=0;
