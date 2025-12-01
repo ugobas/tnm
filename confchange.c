@@ -302,6 +302,8 @@ float Examine_confchange(struct Tors *Diff,
 
     if(nstruct)continue; 
     if((ALL_TYPES==0)&&((i_dphi==0)||(i_dphi==3)))continue;
+    // i_dphi: 0=OLS (skipped) 1=Lasso or M (skipped) 2=Cv
+    // 3=difference (skipped) 4=greedy
 
     if(i_dphi==1){
       continue;
@@ -348,7 +350,7 @@ float Examine_confchange(struct Tors *Diff,
       int NMODES=NM.N; if(NMODES>NM.N)NMODES=NM.N;
       struct Normal_Mode *Modes; char mode_name[20];
       float cc_thr=0.0; // Filter modes contributing < cc_thr A
-      if(1||MMASS==0){Modes=&NM; strcpy(mode_name, "normal");}
+      if(MMASS==0){Modes=&NM; strcpy(mode_name, "normal");}
       else{Modes=&NM_kin; strcpy(mode_name, "mass");}
       Torsional_confchange(dphi, "greedy", bonds, J_CC, Ref1, ali_a,
 			   0.1, atoms1, natoms1, namenew, axe, naxe,seq1,
@@ -356,6 +358,7 @@ float Examine_confchange(struct Tors *Diff,
 			   Para_simul, Modes, mode_name, NMODES, cc_thr);
       printf("\nMaking conformation change. Time= %.2lf sec.\n",
 	     (clock()-t0)/nbtops); t0=clock();
+      continue;
     }
     fprintf(file_out, "### Projection on normal modes");
     Print_diff(&num_dphi, name_dphi, diff_angles, MW_diff_angles, c2_alpha,
@@ -526,7 +529,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
     c_thr=rmsd_thr*M_sqrt;
   }else{
     float Coeff=0.1;
-    sprintf(name, "RR DE C=%.2g", Coeff);
+    sprintf(name, "RRR on DE, C=%.2g", Coeff);
     double sum_sigma2=0; // Regularization on DE=sum_a (c_a/w_a)^2
     for (i=0; i<N_modes; i++)sum_sigma2+=sigma2[i];
     Lambda=Coeff*sum_sigma2/N_modes;
@@ -663,10 +666,10 @@ void Print_diff(int *num_dphi, char **name_dphi,
     fprintf(file_out, "RMSD_Cart             %.3f\n", Diff->RMSD);
     fprintf(file_out, "RMSD_WTors            %.3f\n", Diff->RMSD_W);
     fprintf(file_out, "Non-tors_RMSD         %.3f\n", Diff->RMSD_NoTors);
-    fprintf(file_out, "RMSD_reconstruct_1    %.3f\n", RMSD);
-    fprintf(file_out, "RMSD_reconstruct_2    %.3f\n", RMSD_target);
-    fprintf(file_out, "RMSD_lin_1            %.3f\n", RMSD_lin);
-    fprintf(file_out, "RMSD_lin_2            %.3f\n", RMSD_lin_target);
+    fprintf(file_out, "RMSD_RRR_str1         %.3f\n", RMSD);
+    fprintf(file_out, "RMSD_RRR_str2         %.3f\n", RMSD_target);
+    fprintf(file_out, "RMSD_lin_str1         %.3f\n", RMSD_lin);
+    fprintf(file_out, "RMSD_lin_str2         %.3f\n", RMSD_lin_target);
     fprintf(file_out, "RMSD_lin_full         %.3f\n", RMSD_lin_full);
     fprintf(file_out, "Tors_frac             %.3f\n", Diff->Tors_frac);
     if(n_outlier)
@@ -753,15 +756,16 @@ void Print_diff(int *num_dphi, char **name_dphi,
     sum_thr, nmodes_w2/(float)nmodes_c2, nmodes_w2, nmodes_c2);*/
   //(sum_c2*Delta_E0)/(sum_sigma2*Delta_E));
   fprintf(file_out, "Null_model_rmsd       %.3g\n", sqrt(sum_c2)/M_sqrt);
-  fprintf(file_out, "Delta_E_ran/Delta_E   %.3g\n",
-	  Delta_E0_ave/Delta_E); 
-  fprintf(file_out, "P(Delta_E_ran<Delta_E) %.3g\n",pval);
-  //fprintf(file_out, "Selected_modes        %d\n", nmodes); //Delta_E
-  fprintf(file_out, "Mean_num. modes       %.1f\n", m_ave);
-  Delta_E/=(2.0*M_sqrt*M_sqrt);
-  fprintf(file_out, "Delta_E(kBT)          %.3g\n", Delta_E);
+  float Delta_E_true=Delta_E/(2.0*M_sqrt*M_sqrt);
+  fprintf(file_out, "Delta_E(kBT)          %.3g\n", Delta_E_true);
   fprintf(file_out, "Delta_E(kBT)/Dr^2     %.3g\n",
-	  Delta_E/(Diff->RMSD*Diff->RMSD));
+	  Delta_E_true/(Diff->RMSD*Diff->RMSD));
+  fprintf(file_out, "Delta_E_null/Delta_E  %.3g\n",
+	  Delta_E0_ave/Delta_E); 
+  fprintf(file_out, "P(Delta_E_nl<Delta_E) %.3g\n",pval);
+  //fprintf(file_out, "Selected_modes        %d\n", nmodes); //Delta_E
+  //fprintf(file_out, "Mean_num. modes       %.1f\n", m_ave);
+
 
   // Equivalent threshold for normal modes
   //double s2_thr=sum_sigma2*sum_c2/sum_c2;
@@ -835,8 +839,8 @@ void Print_diff(int *num_dphi, char **name_dphi,
   //if(REG2)
   //fprintf(file_out, "# Warning, regularization violates the null model\n");
   fprintf(file_out, "r[c^2,1/w^2]          %.3f\n", r);
-  fprintf(file_out, "slope                 %.2g\n", slope);
-  fprintf(file_out, "offset                %.2g\n", offset);
+  //fprintf(file_out, "slope                 %.2g\n", slope);
+  //fprintf(file_out, "offset                %.2g\n", offset);
   float Coll=Collectivity_norm1(y, k);
   //Coll=Collectivity_norm1(c2, NM->N_relevant);
   fprintf(file_out, "Recp.Coll(cc)         %.1f\n", Coll);
@@ -872,7 +876,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
    }
    }*/
 
-  if(nstruct==0)fprintf(file_out, "#\n");
+  // if(nstruct==0)fprintf(file_out, "#\n");
 
   // rho
   k=0; cmax=-1;
@@ -886,7 +890,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
   }
   r= Corr_coeff(x, y, k, &slope, &offset);
   //~ float k_Therm=Collectivity_norm1(sigma2, N_modes);
-  if(nstruct==0)
+  if(0 && nstruct==0)
     fprintf(file_out, "Most_contr.mode(c*w): %d %.3f %.3g  %.2f %.2f %.2f\n",
 	    imax, sqrt(cmax), sigma2[imax], NM->Cart_coll[imax],
 	    NM->MW_Tors_coll[imax], NM->Tors_coll[imax]);
@@ -894,7 +898,7 @@ void Print_diff(int *num_dphi, char **name_dphi,
   fprintf(file_out, "Significance(Z)       %.3f nsel=%d\n", r*sqrt(k), k);
   //fprintf(file_out, "Significance(Z)       %.3f\n",r*sqrt(k_Therm));
   Coll=Collectivity_norm1(y, k);
-  fprintf(file_out, "Recp.Coll((cc*w)^2)   %.1f\n", Coll);
+  //fprintf(file_out, "Recp.Coll((cc*w)^2)   %.1f\n", Coll);
 
   // Correlation conformation change and anharmonicity
   if(NM->Anharmonicity[0]){
@@ -936,12 +940,13 @@ void Print_diff(int *num_dphi, char **name_dphi,
   //fprintf(file_out, "expo(therm,force)     %.2g\n", slope);
 
   for(i=0; i<NM->N; i++)F_coeff[i]/=sum;
-  float k_Force_mode=Collectivity_norm1(F_coeff, N_modes);
-  fprintf(file_out, "Recp.Coll.(Force)     %.1f\n", k_Force_mode);
-  fprintf(file_out, "Most_contr.mode(force) %d %.3g %.3g  %.2f %.2f %.2f\n",
-	  imax, cmax/sum, sigma2[imax], NM->Cart_coll[imax],
-	  NM->MW_Tors_coll[imax], NM->Tors_coll[imax]);
-
+  if(0){
+    float k_Force_mode=Collectivity_norm1(F_coeff, N_modes);
+    fprintf(file_out, "Recp.Coll.(Force)     %.1f\n", k_Force_mode);
+    fprintf(file_out, "Most_contr.mode(force) %d %.3g %.3g  %.2f %.2f %.2f\n",
+	    imax, cmax/sum, sigma2[imax], NM->Cart_coll[imax],
+	    NM->MW_Tors_coll[imax], NM->Tors_coll[imax]);
+  }
   fprintf(file_out, "#\n");
 
 }

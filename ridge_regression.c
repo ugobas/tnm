@@ -159,8 +159,10 @@ float Ridge_regression(struct ridge_fit *return_fit, float *Y_pred,
   if(VBS)printf("Writing %s\n", namefile);
   if(Npar>12)P_FIT=0;
   fprintf(file_out, "# N= %d Npar= %d\n", N, Npar); //RangeRisk
-  fprintf(file_out, "# Lambda Error dE/dL LF(csi) LF(inf)");
-  if(P_FIT)for(a=0; a<Npar; a++)fprintf(file_out, "\tA%d", a);
+  fprintf(file_out, "#col.7=A0 is the force constant\n");
+  fprintf(file_out,
+	  "#1=Lambda\t2=Error\t3=dE/dL\t4=LF(csi)\t5=LF(inf)\t6=type");
+  if(P_FIT)for(a=0; a<Npar; a++)fprintf(file_out, "\t%d=A%d", a+7, a);
   fprintf(file_out,"\n");
  
   struct ridge_fit fit; fit.A=malloc(Npar*sizeof(float));

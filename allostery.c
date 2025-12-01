@@ -655,41 +655,43 @@ void Predict_allostery(struct Normal_Mode NM, atom *atoms,
     else{sprintf(profname, "EC");}
     fprintf(file_out, "# Profiles of type %s N=%d\n", profname, Na);
     fprintf(file_out, "### res AA binding");
-    char hd[80]; sprintf(hd, "### 0 0 0");
+    char hd[80]; sprintf(hd, "### 0 0 0"); int np=4;
     if(Prof_proximity){
-      strcat(hd, " 1"); fprintf(file_out, "\tproximity");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=proximity", np); np++;
     }
     if(Prof_coord){
       strcat(hd, " 1");
-      fprintf(file_out, "\tcoord=exp(-sigma^2(d_ij)/D)");
+      fprintf(file_out, "\t%d=coord=exp(-sigma^2(d_ij)/D)", np); np++;
     }
     if(Prof_dir){
-      strcat(hd, " 1"); fprintf(file_out, "\tdir=<dri*drj/|dri||drj|>/");
+      strcat(hd, " 1");
+      fprintf(file_out, "\t%d=dir=<dri*drj/|dri||drj|>", np); np++;
     }
     if(Prof_deformation){
-      strcat(hd, " 1"); fprintf(file_out, "\tdeformation=dri/dfj");
+      strcat(hd, " 1");
+      fprintf(file_out, "\t%d=deformation=dri/dfj", np); np++;
     }
     if(Prof_deformation_dist){
       strcat(hd, " 1");
-      fprintf(file_out, "\tdeformation_dist=dri/dfj(|i-j|)");
+      fprintf(file_out, "\t%d=deformation_dist=dri/dfj(|i-j|)", np); np++;
     }
     if(Prof_dr_dir){
-      strcat(hd, " 1"); fprintf(file_out, "\t<dri*drj>");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=cov=<dri*drj>", np); np++;
     }
     if(Prof_dr){
-      strcat(hd, " 1"); fprintf(file_out, "\t<|dri||drj|>");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=<|dri||drj|>", np); np++;
     }
     if(Prof_Bahar){
-      strcat(hd, " 1"); fprintf(file_out, "\t<|ri-rj|^2>Bahar");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=<|ri-rj|^2>Bahar", np); np++;
     }
     if(Prof_str){
-      strcat(hd, " 1"); fprintf(file_out, "\t<s_i*s_j>");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=<s_i*s_j>", np); np++;
     }
     if(Prof_str_dir){
-      strcat(hd, " 1"); fprintf(file_out, "\t<s_i d_i*s_j d_j>");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=<s_i d_i*s_j d_j>", np); np++;
     }
     if(strdiff){
-      strcat(hd, " 1"); fprintf(file_out, "\tConfchange");
+      strcat(hd, " 1"); fprintf(file_out, "\t%d=Confchange", np); np++;
     }
     fprintf(file_out, "\n%s\n", hd);
     

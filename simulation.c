@@ -156,7 +156,7 @@ int Print_mode_PDB(atom *atoms, int natoms,
 {
   // Output file
   char pdbout[200];
-  sprintf(pdbout, "%s_mode%d.pdb", nameout, is);
+  sprintf(pdbout, "%s.mode%d.pdb", nameout, is);
   FILE *file_out=fopen(pdbout, "w");
   printf("Writing normal modes in PDB format in %s\n", pdbout);
 
@@ -711,7 +711,7 @@ void Torsional_confchange(double *diff_phi, char *diff_type,
   for(i=0; i<natoms1; i++)mass[i]=Mass(atoms1+i);
   if(strcmp(diff_type, "standard")!=0){
     char pdbout[200];
-    sprintf(pdbout, "%s_confchange_%s.pdb", nameout, diff_type);
+    sprintf(pdbout, "%s_path_%s.pdb", nameout, diff_type);
     file_pdb=fopen(pdbout, "w");
     printf("Writing trajectory in PDB format in %s\n", pdbout);
     Print_seqres(file_pdb, chains, Nchain);
@@ -958,7 +958,7 @@ void Torsional_confchange_RRR(double *diff_phi, char *diff_type,
   for(i=0; i<natoms1; i++)mass[i]=Mass(atoms1+i);
   if(strcmp(diff_type, "standard")!=0){
     char pdbout[200];
-    sprintf(pdbout, "%s_confchange_%s.pdb", nameout, diff_type);
+    sprintf(pdbout, "%s_path_%s.pdb", nameout, diff_type);
     file_pdb=fopen(pdbout, "w");
     printf("Writing trajectory in PDB format in %s\n", pdbout);
     Print_seqres(file_pdb, chains, Nchain);
