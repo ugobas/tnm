@@ -2344,7 +2344,8 @@ int getArgs(int argc, char **argv,
       *ALLOSTERY=1;
     }else if (strncmp(argv[i],"-sites",6)==0){
       i++; if(i>=argc)continue;
-      sscanf(argv[i], SITES);
+      strcpy(SITES, argv[i]);
+      printf("Binding site file: %s\n", SITES);
     }else if (strncmp(argv[i],"-print_confchange",13)==0){
       *PRINT_CONFCHANGE=1;
     }else if (strncmp(argv[i],"-print_force",12)==0){

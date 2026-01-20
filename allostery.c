@@ -1369,6 +1369,7 @@ void Binding_sites(int *site,
   char *chain_res[NMAX], *description[NMAX], file_site[200];
   int PRINT_SITE=1;  // Print active site read in the PDB?
   printf("Reading binding sites\n");
+  if(SITES[0]!='\0'){printf("Binding site file: %s\n", SITES);}
   int N_sites=
     Read_sites(site_res, nres_site, chain_res, description, file_site,
 	       NMAX, SITES, pdb, chain, Nchain, seq, Nres,PRINT_SITE);

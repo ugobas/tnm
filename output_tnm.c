@@ -166,8 +166,8 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,
   }
 
   fprintf(file_out, "# Frequency reported in internal units: %.3f ps^(-1),"
-	  " kT/h/ is %.3g internal units (om-2)= %.3g\n",
-	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/0.1482);
+	  " om_q=kT/h/ is %.3g internal units (om_quantum-2)= %.3g\n",
+	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/(0.385*0.385));
   fprintf(file_out,"#mode pc_therm cumul ");
   fprintf(file_out,"om-2(harm) ");
   if(anharmonic)fprintf(file_out, "om-2(corr) om-2(anha) ");

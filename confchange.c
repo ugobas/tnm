@@ -1027,8 +1027,8 @@ void Print_modes_confchange(char *name2, char *nameout2,
 
   // Print lines
   fprintf(file_out, "# Frequency reported in internal units: %.3f ps^(-1),"
-	  " kT/h/ is %.3g internal units (om-2)= %.3g\n",
-	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/0.1482);
+	  " om_q=kT/h/ is %.3g internal units (om_quantum-2)= %.3g\n",
+	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/(0.385*0.385));
   fprintf(file_out,"# mode pc_confch cumul  ");
   fprintf(file_out,"om-2(harm) ");
   if(anharmonic)fprintf(file_out, "om-2(corr) om-2(anha) ");
