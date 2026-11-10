@@ -35,7 +35,7 @@ void Axis_distance_S(float *d_nb, float *d_bo, float S_THR,
 		     atom *atom_i, atom *atom_j, atom *atoms);
 static float Scalar(float *ri, float *rj, float *rk);
 static float Dist2(float *ri, float *rj);
-static void Rank(struct ranked *rank, int i, float x, int Rmax);
+extern void Rank(struct ranked *rank, int i, float x, int Rmax);
 
 int Interactions_shadow(struct interaction *Int_list, float THR, 
 			atom *atoms, int N_atoms,
@@ -126,7 +126,7 @@ int Interactions_shadow(struct interaction *Int_list, float THR,
 	if(d_bo < S_BOND)goto No_int;
       }
       Int_list[N_int].i1=i1; Int_list[N_int].i2=i2;
-      Int_list[N_int].r2=d2_ij; Int_list[N_int].sec_der=w;
+      Int_list[N_int].r2=d2_ij; Int_list[N_int].for_cons=w;
       Int_list[N_int].rmin=d2_ij;
       N_int++;
       if(N_int >= INT_MAX){
@@ -263,8 +263,7 @@ void Axis_distance_S(float *d_nb, float *d_bo, float S_THR,
   *d_nb=sqrt(*d_nb);
 }
 
-
-
+/*
 void Rank(struct ranked *rank,  int i, float x, int Rmax)
 {
   // Rank in decreasing order (lowest = 0)
@@ -326,5 +325,5 @@ void Rank(struct ranked *rank,  int i, float x, int Rmax)
     exit(8);
     }*/
 
-  return;
-}
+/*return;
+  }*/
