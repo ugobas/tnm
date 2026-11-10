@@ -201,6 +201,29 @@ float Collectivity_norm1(float *v, int N){
   return(kappa);
 }
 
+float Collectivity_atoms(float *v, float *mass, int N_atom){
+  double sum=0, Entropy=0; int i;
+  for(i=0; i<N_atom; i++){
+    int j=3*i;
+    float w=mass[i]*(v[j]*v[j]+v[j+1]*v[j+1]+v[j+2]*v[j+2]);
+    if(w>0){sum+=w; Entropy-=w*log(w);}
+  }
+  if(sum>0){
+    Entropy=Entropy/sum;
+    Entropy+=log(sum);
+  }
+  float kappa=exp(Entropy);
+  if(isnan(kappa)){
+    printf("Warning in Collectivity_norm2 ");
+    printf("Entropy: %.2g sum: %.2g kappa: %.2g\n", Entropy, sum, kappa);
+    printf("v: ");
+    for(i=0; i<30; i++)printf(" %.2g", v[i]);
+    printf(" ...\n");
+    //exit(8);
+  }
+  return(kappa);
+}
+
 float Collectivity_norm2(float *v, int N){
   float kappa, w; double sum=0, Entropy=0; int i;
   for(i=0; i<N; i++){

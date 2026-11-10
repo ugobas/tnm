@@ -9,6 +9,7 @@ typedef struct {
   // Read from PDB
   double r[3];
   char name[4];
+  int type;
   float B_factor;
   float anisou[3][3];
   float occupancy;
@@ -91,7 +92,7 @@ struct interaction{
   int i1, i2; // atom2 > atom1
   int res1, res2;
   float r1, r2, r3; // thresholds
-  double r0, sec_der;
+  double r0, for_cons, force_aa;
   double A0, A1, A2, A4; // for r<r1; A4=repulsion A2=attraction
   double B0, B1, B2, B4; // for r2<r<r3;
   double a0, a1, a2, a3, a4, a5; // r1<r<r2

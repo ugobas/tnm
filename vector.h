@@ -26,6 +26,7 @@ float Corr_coeff(float *x, float *y, int N, float *slope, float *offset);
 // Collectivity
 float Collectivity_norm1(float *v, int N);
 float Collectivity_norm2(float *v, int N);
+float Collectivity_atoms(float *r, float *m, int N);
 float Collectivity_norm2_outlier(float *v, int N, int *outlier);
 float Collectivity_Renyi_norm1(float *v, int N);
 float Collectivity_Renyi_norm2(float *v, int N);
