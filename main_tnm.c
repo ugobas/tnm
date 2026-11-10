@@ -29,6 +29,7 @@
   = sum_alpha(RT/M*omega_alpha^2)
  */
 
+
 #define PRG "tnm"
 int LABEL=0; // Print model parameters in file name?
 
@@ -39,9 +40,11 @@ double DG_NM_internal=0;
 double DG_NM_rigid=0;
 double E_cont_bind=0;
 int N_rigid_inter;
+//int INERTIA_AXIS=1;  // Reorient Cartesian axis as inertia axis
 
 /********** Some of these parameters are not set from input file **********/
 // Force constant
+int INT_ATOM=0; // Compute force constant according to atom type
 //float KAPPA_DEF=218.4; // Force const. if B not fitted
 float KAPPA_DEF_PHI=5; //15; // Force const. if B not fitted
 float KAPPA_DEF_PHIPSI=8.2;  //24.5; // Force const. if B not fit
@@ -56,10 +59,15 @@ float TEMP_DEF=293;
 float Freq_unit=0.156; // internal units in units of ps^(-1)
 
 // Selection of modes
-#define COLL_THR_DEF 30   
+#define COLL_THR_DEF 30  // 30 
+#define COLL_FRAC_THR 0.05 
 float COLL_THR= COLL_THR_DEF;  // Select mode if exp(-S_cart) > COLL_THR
 double E_THR;
 // E_MIN
+
+// Interaction types
+int INTERSECT=0; // Intersection of interaction types with MIN
+int UNION=0; // Union of interaction type with MIN
 
 // Analysis of conformation change
 int SWITCH_BONDS=1; // Select only bonds with aligned atoms (1)
@@ -172,7 +180,7 @@ char SITES[100]="";
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
-
+#include <ctype.h>
 
 // Global variables
 double mass_sum=0;
@@ -196,6 +204,7 @@ float BB_angle[8]; //={1.1091,1.0196,1.2018,1.2162,1.0359};
 // k_ij = KAPPA*(r_ij/C0)^-EXP_HESSIAN if r<C1 0 if r>=C_THR (if POW)
 int POW=1;      // Power law (1) or exponential (0)?
 float C_THR=0;  // Threshold for contacts
+float C_THR2=0;
 float EXP_HESSIAN=0; 
 float C1_THR=0; // Start of interpolation region
 float C0=0;     // Reference distance for force constant
@@ -223,10 +232,20 @@ float COS_DAA=-0.008;   // Max cos(A'AD) (min. 105 degrees)
 float THR_NO=4;   // Threshold for NO interactions
 int S_TYPE=0;        // Type of shadow interaction
 int ONEINT=0;        // Only one interaction per atom vs. residue
-float S_THR=0;       // Screening parameter
+float SCR_THR=10;    // Cut-off on screened interactions
+float K_THR, K1_THR; // Where teh force constant vanishes
+float S_TOL=-1;       // Screening parameter
+float S_TOL_0=0.8; // Screening parameter for SHA 0 
+float S_TOL_1=2.0; // Screening parameter for SHA 1 
+float S_TOL_2=1.2; // Screening parameter for SHA 2 
+float S_TOL_3=0.2; // Screening parameter for SCR 
+
 int HNM=0;           // Calpha interactions with Hissen parameters
 int NOCOV=1;         // Covalent neighbors do not interact
-int N_RESRES=0;      // Number of interactions retained for each residue pair
+// 9/6/2026 Change in covalent (it was forbidding i,i+1 interactions
+// int NOCOV=1;         // Covalent neighbors do interact
+int INT_STIFF=0;     // Stiff interactions
+int N_RESRES=1;      // Number of interactions retained for each residue pair
 
 // General
 char REF[20];      // Reference atoms
@@ -321,7 +340,7 @@ int getArgs(int argc, char **argv,
 	    double *K_BA, double *K_BL,
 	    float *E_MIN, float *COLL_THR,
 	    int *MIN_INT, char *INT_TYPE, float *thr,
-	    int *S_TYPE, float *S_THR,
+	    int *S_TYPE, float *S_TOL,
 	    int *ONEINT, int *N_RESRES,
 	    int *N_MODE, char *outdir,
 	    int *PRINT_CONFCHANGE, int *PRINT_FORCE,
@@ -346,7 +365,7 @@ int getArgs(int argc, char **argv,
 	    int *PRINT_PDB_ANHARM, int *N_PDB_print,
 	    int *FOLDING, int *BINDING, int *UNFOLDING,
 	    int *n_apo, char *apo_chains);
-
+char *get_arg(int *i, char **argv, int argc);
 int Read_para(char *filename,
 	      char *file_pdb1, char *chain1,
 	      char *file_pdb2, char *chain2,
@@ -357,7 +376,7 @@ int Read_para(char *filename,
 	      double *K_BA, double *K_BL,
 	      float *E_MIN, float *COLL_THR, int *MIN_INT,
 	      char *INT_TYPE, float *thr,
-	      int *S_TYPE, float *S_THR,
+	      int *S_TYPE, float *S_TOL,
 	      int *ONEINT, int *N_RESRES,
 	      int *N_MODE, char *outdir,
 	      int *PRINT_CONFCHANGE, int *PRINT_FORCE,
@@ -401,8 +420,7 @@ void Get_modes_Cart(struct Normal_Mode NM, int N_modes,
 		    double **Hessian, struct Jacobian J,
 		    struct axe *axe1, int naxe1, struct Reference Ref_kin);
 int Compute_sigma2(int *N_disc_freq, int *N_disc_out, struct Normal_Mode NM,
-		   float *mass_sqrt, int naxe1, int N_cart,
-		   float COLL_THR);
+		   struct Reference Ref, int naxe1, int N_cart, float COLL_THR);
 struct interaction *Apo_interactions(int *N_int_apo,
 				     struct interaction **Int_list_inter,
 				     int *N_int_inter,
@@ -448,14 +466,10 @@ int main(int argc , char *argv[]){
 
   // Control
   int ANM=0;
-  char INT_TYPE[40];
+  char INT_TYPE[40]="MIN";
   //char REF[20]; // In interactions_tnm.h
   int N_MODE_PRINT=0;
   int ALLOSTERY=0;
-
-  
-  //float S_THR=0.20;
-  //int S_TYPE=0; // type of shadow interaction
 
   // Struct 1
   int ANISOU1=0;
@@ -554,7 +568,6 @@ int main(int argc , char *argv[]){
   ALL_AXES=1;
   KINETIC=1;
   E_MIN=0.00000001; //E_MIN_DEF;
-  ONEINT=1;
   N_RESRES=1;
   HYD=0; HYD_REF=0; // Read hydrogen atoms or not?
   FIT_B=1; R_MIN=0; SLOPE_MIN=0.00; RMSD_EXP=0.5;
@@ -565,7 +578,7 @@ int main(int argc , char *argv[]){
 	  &ANM, REF, &LABEL, &SIDECHAINS, &OMEGA, &PSI,
 	  &K_OMEGA, &K_PSI, &K_PHI, &K_CHI, &K_BA, &K_BL,
 	  &E_MIN, &COLL_THR, &MIN_INT_SIDE, INT_TYPE, &C_THR, &S_TYPE,
-	  &S_THR, &ONEINT, &N_RESRES, &N_MODE_PRINT, outdir,
+	  &S_TOL, &ONEINT, &N_RESRES, &N_MODE_PRINT, outdir,
 	  &PRINT_CONFCHANGE, &PRINT_FORCE, &PRINT_PDB, &PRINT_MODE_SUMM,
 	  &FILE_FORCE, &ALLOSTERY, &KAPPA, &FIT_B, &RMSD_EXP, &RMSD_MIN,
 	  &NMUT, &PRED_MUT, &IWT, Mut_para,
@@ -575,6 +588,7 @@ int main(int argc , char *argv[]){
 	  &PRINT_SIGMA_DIJ, &PROF_TYPE, &ALL_PAIRS, &SIGMA, &STRAIN, SITES,
 	  &PRINT_CMAT, &ANHARMONIC, &PRINT_PDB_ANHARM, &N_PDB_print,
 	  &FOLDING, &BINDING, &UNFOLDING, &n_apo, apo_chains);
+
   MIN_INT_MAIN=MIN_INT_SIDE;
   if(BINDING){
     if(ALLOSTERY==0){
@@ -813,7 +827,8 @@ int main(int argc , char *argv[]){
   // Put center of mass at the origin
   Center_atoms(atoms1, natoms1, Ref_kin);
   // Reorient the Cartesian axes along the principal axes
-  Reorient_axes(atoms1, natoms1, Ref_kin);
+  float **rot_inv=Allocate_mat2_f(3,3);
+  Reorient_axes(atoms1, natoms1, rot_inv, Ref_kin);
 
   printf("\n************************************************\n");
   printf("*********** Prepare output files ***************\n");
@@ -832,21 +847,35 @@ int main(int argc , char *argv[]){
 
   if(strncmp(INT_TYPE, "SCR", 3)==0){
     if(ONEINT==0){
-      sprintf(tmp, "%s_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_d%.2f_t%.1f", INT_TYPE, S_TOL, C_THR);
     }else{
-      sprintf(tmp, "%s_MIN_d%.2f_t%.1f", INT_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_MIN_d%.2f_t%.1f", INT_TYPE, S_TOL, C_THR);
     }
-  }else if(strncmp(INT_TYPE, "SHA", 3)==0){
     if(ONEINT==0){
-      sprintf(tmp, "%s_%d_d%.2f_t%.1f", INT_TYPE, S_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_%d_d%.2f_t%.1f", INT_TYPE, S_TYPE, S_TOL, C_THR);
     }else{
-      sprintf(tmp, "%s_MIN_%d_d%.2f_t%.1f",INT_TYPE, S_TYPE, S_THR, C_THR);
+      sprintf(tmp, "%s_MIN_%d_d%.2f_t%.1f",INT_TYPE, S_TYPE, S_TOL, C_THR);
     }
   }else if((strncmp(INT_TYPE, "MIN", 3)==0)&&(N_RESRES>1)){
     sprintf(tmp, "%s%.1f_M%d", INT_TYPE, C_THR, N_RESRES);	      
   }else{
     sprintf(tmp, "%s%.1f", INT_TYPE, C_THR);
   }
+
+  // Shadow interactions union MIN: INT
+  if(UNION && INTERSECT){
+    printf("ERROR, union and interesct not allowed simultaneously\n");
+    exit(8);
+  }
+
+  if(UNION || INTERSECT){
+    C_THR2=THR_ALL;
+    char tmp2[40];
+    sprintf(tmp2, "%s%.1f", "MIN", C_THR2);
+    if(UNION){strcat(tmp, "_union_");}else{strcat(tmp, "_intersect_");}
+    strcat(tmp, tmp2);
+  }
+
   strcat(fullmodel, tmp);
 
   strcat(fullmodel,"_"); strcat(fullmodel,REF);
@@ -962,6 +991,9 @@ int main(int argc , char *argv[]){
   struct interaction *Int_list; 
   Compute_interactions(&N_int, &Int_list, INT_TYPE,
 		       atoms1, natoms1, nres1, nameprot1);
+  if(INT_ATOM){
+    Type_dependent_force(Int_list, N_int, atoms1, natoms1, seq1, nres1);
+  }
 
   if(PRINT_CMAT){
     printf("Printing contact matrix\n");
@@ -1047,7 +1079,11 @@ int main(int argc , char *argv[]){
   struct interaction *Int_list_apo=NULL; int N_int_apo=0;
   struct interaction *Int_list_inter=NULL; int N_int_inter=0;
   int Cart_interface[N_Cart], N_Cart_inter=0;
-  int rigid_inter[N_rigid]; for(i=0; i<N_rigid; i++)rigid_inter[i]=-1;
+  int *rigid_inter=NULL;
+  if(N_rigid){
+    rigid_inter=malloc(N_rigid*sizeof(int));
+    for(i=0; i<N_rigid; i++)rigid_inter[i]=-1;
+  }
   if(BINDING){
     if(Nchain1<=n_apo){
       printf("WARNING, you requested to compute the binding free energy "
@@ -1213,7 +1249,7 @@ int main(int argc , char *argv[]){
   // Select modes based on eigenvalues and collectivity
 
   // Collectivity
-  if(COLL_THR > natoms1*0.05)COLL_THR = natoms1*0.05;
+  if(COLL_THR > N_ref*COLL_FRAC_THR)COLL_THR = N_ref*COLL_FRAC_THR;
   COLL_THR *=3;
 
   double E_ave=0; for(ia=0; ia<NM.N; ia++)E_ave+=NM.omega2[ia]; E_ave/=NM.N;
@@ -1252,19 +1288,19 @@ int main(int argc , char *argv[]){
   printf("Selecting modes of full interaction matrix\n");
   int N_disc_freq=0, N_disc_out=0, N_disc_coll=
     Compute_sigma2(&N_disc_freq, &N_disc_out, NM,
-		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+		   Ref_kin, naxe1, N_Cart, COLL_THR);
 
   if(FOLDING){
     int N_disc_unfold_f=0, N_disc_unfold_o=0;
     printf("Selecting modes of unfolded interaction matrix\n");
     Compute_sigma2(&N_disc_unfold_f, &N_disc_unfold_o, NM_unfold,
-		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+		   Ref_kin, naxe1, N_Cart, COLL_THR);
   }
   if(BINDING){
     int N_disc_apo_f=0, N_disc_apo_o=0;
     printf("Selecting modes of unbound interaction matrix\n");
     Compute_sigma2(&N_disc_apo_f, &N_disc_apo_o, NM_apo,
-		   Ref_kin.mass_sqrt, naxe1, N_Cart, COLL_THR);
+		   Ref_kin, naxe1, N_Cart, COLL_THR);
   }
 
   printf("Normal mode selection. Time= %.2lf sec.\n", (clock()-t0)/nbtops);
@@ -1459,7 +1495,7 @@ int main(int argc , char *argv[]){
     // Store conformation change over kinetic energy atoms for allostery
     Confchange=malloc(Ref1.N_Cart*sizeof(float));
     rmsd=rmsd_mclachlan_f(coord_1, coord_2, Ref1.mass_atom, Ref1.N_ref);
-    for(i=0; i<N_ref; i++)Confchange[i]=coord_2[i]-coord_1[i];
+    for(i=0; i<3*N_ref; i++)Confchange[i]=coord_2[i]-coord_1[i];
     
     struct Tors Diff;
     Allocate_tors(&Diff, naxe1, Ref1.N_Cart, N_modes);
@@ -1515,7 +1551,8 @@ int main(int argc , char *argv[]){
        not only those representative of conformation change (Ref1) */
     struct Tors Force;
     Compute_force(&Force, Diff.coeff, NM);
-    float k_Force_cart=Collectivity_norm2(Force.Cart, 3*N_ref);
+    //float k_Force_cart=Collectivity_norm2(Force.Cart, 3*N_ref);
+    float k_Force_cart=Collectivity_atoms(Force.Cart, Ref1.mass_atom, N_ref);
     FILE *file_out=fopen(summary2, "a");
     fprintf(file_out, "Coll(force_Lambda)     %.0f\n", k_Force_cart);
     fclose(file_out);
@@ -1553,6 +1590,9 @@ int main(int argc , char *argv[]){
   if(N_print>NM.N)N_print=NM.N;
   printf("Modes to be printed: %d\n", N_print);
   if(N_print){
+    // Put Cartesian modes in the original reference frame
+    for(i=0; i<NM.N; i++){Rotate_vector(NM.Cart[i], rot_inv, N_Cart);}
+
     Print_modes(N_print, nameout1, "Cart", NM.select, N_Cart,
 		NM.Cart, NM.Cart_coll, NM.sigma2, sum_sigma2, axe1, naxe1,
 		atoms1, natoms1, seq1, nres1, Ref_kin.atom_num, N_ref);
@@ -1770,7 +1810,7 @@ double Rescale_Hessian(struct Normal_Mode NM,
 {
 
   // rescale interactions
-  for(int i=0; i<N_int; i++)Int_list[i].sec_der*=kappa;
+  for(int i=0; i<N_int; i++)Int_list[i].for_cons*=kappa;
 
   double sum_sigma2=0; int i;
   printf("Rescaling omega2 by factor %.3g\n", kappa);
@@ -2149,7 +2189,7 @@ int getArgs(int argc, char **argv,
 	    double *K_BA, double *K_BL,
 	    float *E_MIN, float *COLL_THR,
 	    int *MIN_INT, char *INT_TYPE,
-	    float *C_THR, int *S_TYPE, float *S_THR,
+	    float *C_THR, int *S_TYPE, float *S_TOL,
 	    int *ONEINT, int *N_RESRES,
 	    int *N_MODE, char *outdir,
 	    int *PRINT_CONFCHANGE, int *PRINT_FORCE,
@@ -2239,7 +2279,7 @@ int getArgs(int argc, char **argv,
 		       ANM, REF, LABEL, SIDECHAINS, OMEGA, PSI,
 		       K_OMEGA, K_PSI, K_PHI, K_CHI, K_BA, K_BL,
 		       E_MIN, COLL_THR, MIN_INT, INT_TYPE, C_THR,
-		       S_TYPE, S_THR, ONEINT, N_RESRES,
+		       S_TYPE, S_TOL, ONEINT, N_RESRES,
 		       N_MODE, outdir, PRINT_CONFCHANGE, PRINT_FORCE,
 		       PRINT_PDB, PRINT_MODE_SUMM, FILE_FORCE, ALLOSTERY,
 		       KAPPA, FIT_B, RMSD_EXP, RMSD_MIN,
@@ -2256,40 +2296,80 @@ int getArgs(int argc, char **argv,
   }
 
   printf("Reading parameters from command line\n");
+  char *a;
   for(i=0; i<argc; i++){
     if(strncmp(argv[i],"-file",3)==0){
       i++;
       // Proteins:
     }else if (strcmp(argv[i],"-p2")==0 || strcmp(argv[i],"-pdb2")==0){
-      i++; if(i>=argc)continue;
-      strcpy(file_pdb2,argv[i]); //p2=1;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      //i++; if(i>=argc)continue;
+      strcpy(file_pdb2,a); //p2=1;
       printf("file_pdb2=%s\n",file_pdb2);
     }else if (strncmp(argv[i],"-c2",3)==0){
-      i++; if(i>=argc)continue;
-      if((strncmp(argv[i], "all", 3)==0)||(strncmp(argv[i], "ALL",3)==0))
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      //i++; if(i>=argc)continue;
+      if((strncmp(a, "all", 3)==0)||(strncmp(a, "ALL",3)==0))
 	{*chain2='*';}
-      else{strcpy(chain2,argv[i]);}
+      else{strcpy(chain2,a);}
       printf("chain2=%s\n",chain2);
     }else if (strcmp(argv[i],"-p1")==0 ||
 	      strcmp(argv[i],"-pdb1")==0 || strcmp(argv[i],"-pdb")==0){
-      i++; if(i>=argc)continue;
-      strcpy(file_pdb1,argv[i]); //p1=1;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      //i++; if(i>=argc)continue;
+      strcpy(file_pdb1,a); //p1=1;
       printf("file_pdb1=%s\n",file_pdb1);
     }else if (strncmp(argv[i],"-c1",3)==0){
-      i++; if(i>=argc)continue;
-      if((strncmp(argv[i], "all",3)==0)||(strncmp(argv[i], "ALL",3)==0))
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      //i++; if(i>=argc)continue;
+      if((strncmp(a, "all",3)==0)||(strncmp(a, "ALL",3)==0))
 	{*chain1='*';}
-      else{strcpy(chain1,argv[i]);}
+      else{strcpy(chain1,a);}
       printf("chain(s) to read: %s\n",chain1);
 
       // Model:
     }else if (strncmp(argv[i],"-cont_type",10)==0){
-      i++; if(i>=argc)continue;
-      strcpy(INT_TYPE, argv[i]);
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      strcpy(INT_TYPE, a);
     }else if (strncmp(argv[i],"-cont_thr",9)==0){
-      i++; if(i>=argc)continue;
-      sscanf(argv[i], "%f", C_THR);
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(a, "%f", C_THR);
       printf("Threshold distance= %.1f\n", *C_THR);
+    }else if (strncmp(argv[i],"-int_atom",7)==0){
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(a, "%d", &INT_ATOM);
+    }else if (strncmp(argv[i],"-scr_thr",8)==0){
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(argv[i], "%f", &SCR_THR);
+      printf("Cut-off on screened interactions= %.1f\n", SCR_THR);
+    }else if (strncmp(argv[i],"-scr_tol",8)==0){
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(argv[i], "%f", S_TOL);
+      printf("Threshold for shadow interactions= %.1f\n", *S_TOL);
+    }else if (strncmp(argv[i],"-intersect",10)==0){
+      INTERSECT=1;
+    }else if (strncmp(argv[i],"-union",6)==0){
+      UNION=1;
+
+    }else if (strncmp(argv[i],"-stiff",6)==0){
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(argv[i], "%d", &INT_STIFF);
+
     }else if (strncmp(argv[i],"-anm",4)==0){
       *ANM=1;
     }else if (strncmp(argv[i],"-hnm",4)==0){
@@ -2301,10 +2381,14 @@ int getArgs(int argc, char **argv,
     }else if (strncmp(argv[i],"-nopsi",6)==0){
       *PSI=0;
     }else if (strncmp(argv[i],"-ref",4)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       strcpy(REF, argv[i]);
     }else if (strncmp(argv[i],"-expo", 5)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       sscanf(argv[i], "%f", &EXP_HESSIAN);
     }else if (strncmp(argv[i],"-fit_B", 6)==0){
       *FIT_B=1;
@@ -2313,25 +2397,35 @@ int getArgs(int argc, char **argv,
 
       // Force
     }else if (strncmp(argv[i],"-force",6)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       *FILE_FORCE=malloc(400*sizeof(char));
       strcpy(*FILE_FORCE, argv[i]);
       // Simulation
     }else if (strncmp(argv[i],"-simul",6)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       sscanf(argv[i], "%d", &(Para_simul->N_SIMUL));
       printf("Simulations to be done= %d\n", Para_simul->N_SIMUL);
     }else if (strncmp(argv[i],"-ampl",6)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       sscanf(argv[i], "%f", &(Para_simul->AMPLITUDE));
       printf("Maximum amplitude= %.1f\n", Para_simul->AMPLITUDE);
       // Output:
     }else if (strncmp(argv[i],"-outdir",7)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       strcpy(outdir, argv[i]); //out=1;
       printf("output directory= %s\n",outdir);
     }else if (strncmp(argv[i],"-modes",6)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       *N_MODE=atoi(argv[i]);  //sscanf(argv[i], "%d", N_MODE);
       printf("%d normal modes to be printed\n",*N_MODE);
     }else if (strncmp(argv[i],"-print_pdb",10)==0){
@@ -2339,11 +2433,16 @@ int getArgs(int argc, char **argv,
     }else if (strncmp(argv[i],"-pred_mut",9)==0){
       *PRED_MUT=1;
     }else if (strncmp(argv[i],"-mut_para",9)==0){
-      i++; strcpy(Mut_para, argv[i]);
+      //i++;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      strcpy(Mut_para, argv[i]);
     }else if (strncmp(argv[i],"-couplings",8)==0){
       *ALLOSTERY=1;
     }else if (strncmp(argv[i],"-sites",6)==0){
-      i++; if(i>=argc)continue;
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
       strcpy(SITES, argv[i]);
       printf("Binding site file: %s\n", SITES);
     }else if (strncmp(argv[i],"-print_confchange",13)==0){
@@ -2422,6 +2521,20 @@ int getArgs(int argc, char **argv,
     }
   }
 
+  // Where the force constant vanishes
+  if((strncmp(INT_TYPE, "SCR", 3)==0) || 
+     (strncmp(INT_TYPE, "SHA", 3)==0)){
+    K_THR=SCR_THR;
+    if(*S_TOL<0){
+      if(strncmp(INT_TYPE, "SCR", 3)==0){*S_TOL=S_TOL_3;}
+      else if(*S_TYPE==0){*S_TOL=S_TOL_0;}
+      else if(*S_TYPE==1){*S_TOL=S_TOL_1;}
+      else if(*S_TYPE==2){*S_TOL=S_TOL_2;}
+    }
+  }else{
+    K_THR=*C_THR;
+  }
+
   if(REF[0]!='\0'){
     if((strncmp(REF, "CA", 2)!=0)&&
        (strncmp(REF, "CB", 2)==0)&&
@@ -2484,13 +2597,25 @@ int getArgs(int argc, char **argv,
   strcat(parameters,tmp);
   sprintf(tmp," CONT=%s ", INT_TYPE); strcat(parameters,tmp);
   if(strncmp(INT_TYPE, "SCR", 3)==0){
-    sprintf(tmp, " Tolerance=%.2f THR=%.2f", *S_THR, *C_THR);
+    sprintf(tmp, " Tolerance=%.2f THR=%.2f", *S_TOL, SCR_THR);
   }else if(strncmp(INT_TYPE, "SHA", 3)==0){
-    sprintf(tmp, " type=%d d=%.2f THR=%.1f", *S_TYPE, *S_THR, *C_THR);
+    sprintf(tmp, " type=%d d=%.2f THR=%.1f", *S_TYPE, *S_TOL, SCR_THR);
   }else{
     sprintf(tmp, " thr=%.2f", *C_THR);
   }
   strcat(parameters,tmp);
+  if(UNION || INTERSECT){
+    if(UNION){strcat(parameters, " Union");}
+    if(INTERSECT){strcat(parameters, " Intersection");}
+    strcat(parameters, " of SCREENED and MIN interactions ");
+  }
+  if(INT_ATOM){
+    sprintf(tmp, " Force constant inv.prop. to variance of dist of ");
+    strcat(parameters,tmp);
+    if(INT_ATOM>0){sprintf(tmp, "atom types");}
+    else{sprintf(tmp, "residue types");}
+    strcat(parameters,tmp);
+  }
   sprintf(tmp, " EXPO=%.1f ", EXP_HESSIAN); strcat(parameters,tmp);
   if(*FIT_B==0){sprintf(tmp, " KAPPA=%.1f", *KAPPA);}
   else{sprintf(tmp, " KAPPA obtained from fit");}
@@ -2499,6 +2624,16 @@ int getArgs(int argc, char **argv,
   return (0);
 }
 
+
+char *get_arg(int *i, char **argv, int argc){
+  (*i)++;
+  if((*i)>=argc || (argv[*i][0]=='-' && isdigit(argv[*i][1]==0))){
+      (*i)--;
+      printf("WARNING, argument of %s not given\n", argv[*i]);
+      return(NULL);
+  }
+  return(argv[*i]);
+}
 void help(void)
 {
   fprintf(stderr,
@@ -2544,7 +2679,7 @@ void help(void)
 	  "K_CHI=%.1f    ! Elastic constant for angle Chi\n"
 	  "CONT_TYPE= MIN ! Interaction model (MIN SCR SHA SCB CB CA HB HNM)\n"
 	  "CONT_THR= %.1f  ! Threshold for contacts\n"
-	  /*"S_THR= 0.2  ! Parameter for screened or shadow interactions\n"
+	  /*"S_TOL= 0.2  ! Parameter for screened or shadow interactions\n"
 	    "S_TYPE= 2   ! Type of shadow interactions\n"
 	    "# 0=angle 1=axis distance 2=S-ball-axis-distance\n"
 	    "ONEINT= 1  ! Only one interaction per residue pair?\n"
@@ -2648,8 +2783,11 @@ void help(void)
 	  "       -pdb2 <pdbfile2> for conformation change\n"
 	  "       -c2 <chain_id2>  all:read all chains, A, AB..\n"
           "Model specification:\n"
-	  "       -cont_type Interact. model: MIN (default) CA CB ALL HYD HB\n"
+	  "       -int_atom <0,1,-1> ! Dependence of force constant 1=atom type -1=residue type 0=none\n" 
+	  "       -cont_type : MIN SCR SHA0 SHA1 SHA2 CA CB ALL HYD HB\n"
 	  "       -cont_thr Distance threshold default: %.1f\n"
+	  "       -scr_thr  Cut-off for screened interactions\n"
+	  "       -scr_tol  Tolerance for shadow interactions\n"
 	  "       -ref Atoms for kinetic energy: ALL (default) CA CB BB EB\n"
 	  "       -omega  Use also omega angle as degree of freedom\n"
 	  "       -nopsi Use only phi torsion angle\n"
@@ -2657,6 +2795,7 @@ void help(void)
 	  "       -sc Use also sidechains as degrees of freedom\n"
 	  "       -expo <e> force constant k~r^(-e) Default: e=%.1f\n"
 	  "       -fit_B Determine the coefficient A of force const by fitting B factors\n"
+	  "       -stiff Set contacts for res at distance < stiff\n"
           "       -anm use ANM d.o.freedom (by default TNM is used)\n"
 	  "       -hnm Hinsen network model: ANM ref=CA cont_type=CA e=6 covalent\n",
 	  PRG, PRG, THR_ALL, EXP_HESSIAN);
@@ -2718,7 +2857,7 @@ int Read_para(char *filename,
 	      double *K_BA, double *K_BL,
 	      float *E_MIN, float *COLL_THR, int *MIN_INT,
 	      char *INT_TYPE, float *C_THR,
-	      int *S_TYPE, float *S_THR,
+	      int *S_TYPE, float *S_TOL,
 	      int *ONEINT, int *N_RESRES,
 	      int *N_MODE, char *outdir,
 	      int *PRINT_CONFCHANGE, int *PRINT_FORCE,
@@ -2823,8 +2962,8 @@ int Read_para(char *filename,
       if(strncmp(INT_TYPE, "HNM", 3)==0)*ANM=1;
     }else if(strncmp(string, "CONT_THR", 8)==0){
       sscanf(string+ 9, "%f", C_THR);
-    }else if(strncmp(string, "S_THR", 5)==0){
-      sscanf(string+6, "%f", S_THR);
+    }else if(strncmp(string, "S_TOL", 5)==0){
+      sscanf(string+6, "%f", S_TOL);
     }else if(strncmp(string, "S_TYPE", 6)==0){
       sscanf(string+7, "%d", S_TYPE);
     }else if(strncmp(string, "ONEINT", 6)==0){
@@ -2967,6 +3106,8 @@ int Read_para(char *filename,
     }
   }
   fclose(file_in);
+  // end reading file
+
   if((*K_PHI==0)&&(*K_PSI))*K_PHI=*K_PSI;
   if((*K_PSI==0)&&(*K_PHI))*K_PSI=*K_PHI;
   if((*K_CHI==0)&&(*K_PHI))*K_CHI=*K_PHI;
@@ -2975,21 +3116,29 @@ int Read_para(char *filename,
     *S_TYPE=0;
     printf("Setting to default %d (angle kij, d_ij<d_ik<d_jk)\n", *S_TYPE);
   }
+
+
   if(strncmp(INT_TYPE, "SHA", 3)==0){
+    int s=-1; sscanf(INT_TYPE+3, "%d", &s);
+    if(s==0 || s==1 || s==2 ){*S_TYPE=s;}
+    else if(INT_TYPE[3]!='\0'){
+      printf("WARNING, shadow type %c does not exist, using default %d\n",
+	     INT_TYPE[3], *S_TYPE);
+    }
     if(*S_TYPE==0){ // Thereshold on cosine(kij)
-      if((*S_THR<0)||(*S_THR>1)){
+      if((*S_TOL<0)||(*S_TOL>1)){
 	printf("ERROR Shadow type %d, shadow parameter %f out of range. ",
-	       *S_TYPE, *S_THR); exit(8);
+	       *S_TYPE, *S_TOL); exit(8);
       }
     }else if (*S_TYPE==1){ // Threshold on distance from axis
-      if(*S_THR<0){
+      if(*S_TOL<0){
 	printf("ERROR Shadow type %d, shadow parameter %f out of range. ",
-	       *S_TYPE, *S_THR); exit(8);
+	       *S_TYPE, *S_TOL); exit(8);
       }
     }else if (*S_TYPE==2){ // Atom radius
-      if(*S_THR<0){
+      if(*S_TOL<0){
 	printf("ERROR Shadow type %d, shadow parameter %f out of range. ",
-	       *S_TYPE, *S_THR); exit(8);
+	       *S_TYPE, *S_TOL); exit(8);
       }
     }
   }
@@ -3168,10 +3317,10 @@ int Get_interface(int *Cart_interface,
 
 
 int Compute_sigma2(int *N_disc_freq, int *N_disc_out,
-		   struct Normal_Mode NM,
-		   float *mass_sum_sqrt, int naxe1, int N_Cart,
-		   float COLL_THR)
+		   struct Normal_Mode NM, struct Reference Ref,
+		   int naxe1, int N_Cart, float COLL_THR)
 {
+  float *mass_sum_sqrt=Ref.mass_sqrt;
   int N_disc_coll=0; *N_disc_freq=0;
 
   for(int ia=0; ia<NM.N; ia++){
@@ -3180,7 +3329,9 @@ int Compute_sigma2(int *N_disc_freq, int *N_disc_out,
       Compute_Max_dev(NM.Cart[ia], NM.omega2[ia], N_Cart, mass_sum_sqrt);
     NM.Tors_coll[ia]=Collectivity_norm2(NM.Tors[ia], naxe1)/naxe1;
     NM.MW_Tors_coll[ia]=Collectivity_norm2(NM.MW_Tors[ia],naxe1)/naxe1;
-    NM.Cart_coll[ia]=Collectivity_norm2(NM.Cart[ia], N_Cart); //_Renyi
+    NM.Cart_coll[ia]=Collectivity_atoms(NM.Cart[ia], Ref.mass_atom, N_Cart/3);
+    //_Renyi
+    //NM.Cart_coll[ia]=Collectivity_norm2(NM.Cart[ia], N_Cart); //_Renyi
     if((NM.omega2[ia]<=E_THR)||(NM.Cart_coll[ia] < COLL_THR)){
       printf("WARNING, discarding mode %d ", ia);
       printf(" omega^2= %.3g Coll= %.0f RMSD= %.2g\n",
@@ -3197,7 +3348,10 @@ int Compute_sigma2(int *N_disc_freq, int *N_disc_out,
   printf("%d modes selected\n", NM.N-(N_disc_coll+*N_disc_freq));
   printf("%d modes discarded for low collectivity ", N_disc_coll);
   printf("and %d for low frequency\n", *N_disc_freq);
-  int amin=0; while(NM.omega2[amin]<0)amin++;
+  int amin=0; while(amin<NM.N && NM.omega2[amin]<=0)amin++;
+  if(amin>=NM.N){
+    printf("ERROR, there are no positive eigenvalues; exiting\n"); exit(8);
+  }
   printf("Smallest positive eigenvalue: %.2g a=%d ",NM.omega2[amin],amin);
   printf("Threshold for selection: %.2g*<omega^2>\n", E_MIN);
 

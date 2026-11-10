@@ -6,6 +6,7 @@
 #include "read.h"
 #include "nma_para.h"
 #include "externals.h"
+#include "atom_types.h"
 
 int SC_BEFORE=1; // Put side chain before CO
 char CHAIN_CODE[200];
@@ -276,11 +277,12 @@ int Count_residues(char *pdb_name, char *chain_to_read){
     nchains=nc;//modyves
   }
   chain_to_read[nchains]='\0';
-  printf("Counting %3d residues in %d chains: %s\n",N_res, nchains, chain_to_read);
-  if(readall==0)//modyves
-  	{free(xchain);xchain=NULL; 
-   	 free(rchain);rchain=NULL;
-  	}
+  printf("Counting %3d residues in %d chains: %s\n",
+	 N_res, nchains, chain_to_read);
+  if(readall==0){
+    free(xchain);xchain=NULL; 
+    free(rchain);rchain=NULL;
+  }
   return(N_res);
 }
 
@@ -404,48 +406,41 @@ int Read_coord(char *pdb_name, int *nmr,
 
     chain=string[21];
     if(chain==' ')chain=*chain_pdb;
-    if(readall)
-    	{if(chain!=chain_old)
-	    {printf("Reading chain %c\n", chain);
-	      chain_to_read[nchains]=chain; nchains++; chain_old=chain;
-	    }
-    	}
-    else
-      {if((chain_to_read[0]==' ')||(chain_to_read[0]=='\0'))
-	  {chain_to_read[0]=chain; chain_to_read[1]='\0';
-	  }
-	for(ic=0; ic<nchains; ic++)
-	  {if(chain==chain_to_read[ic])
-	      {rchain[ic]=1; goto read;}
-	  }
-	continue;
+    if(readall){
+      if(chain!=chain_old){
+	printf("Reading chain %c\n", chain);
+	chain_to_read[nchains]=chain; nchains++; chain_old=chain;
       }
-    
-    /*if(*chain_to_read!='*'){
-      if((*chain_to_read==' ')||(*chain_to_read=='\0'))*chain_to_read=chain;
-      for(ic=0; ic<nchains; ic++)if(chain==chain_to_read[ic])goto read;
+    }else{
+      if((chain_to_read[0]==' ')||(chain_to_read[0]=='\0')){
+	chain_to_read[0]=chain; chain_to_read[1]='\0';
+      }
+      for(ic=0; ic<nchains; ic++){
+	if(chain==chain_to_read[ic]){rchain[ic]=1; goto read;}
+      }
       continue;
-      }*/
-    
-   
+    }
+     
   read:
     // Hydrogen atoms
-    if((string[13]=='H')||(string[12]=='H') || (string[13]=='D') ||(string[12]=='D'))
-    	{if(HYD==0){continue;}   // Omit hydrogen
-      	 else if((string[13]=='H')&&(string[12]!=' '))
-      	 	{// if name 1HB1 change to HB11
-		  	 char c=string[12];
-			 if((c=='1')||(c=='2')||(c=='3'))
-			 	{string[12]='H'; string[13]=string[14];
-	  			 string[14]=string[15]; string[15]=c; 
-				}
-      		}
-    	}
+    if((string[13]=='H')||(string[12]=='H') || 
+       (string[13]=='D') ||(string[12]=='D')){
+      if(HYD==0){continue;}   // Omit hydrogen
+      else if((string[13]=='H')&&(string[12]!=' ')){
+	// if name 1HB1 change to HB11
+	char c=string[12];
+	if((c=='1')||(c=='2')||(c=='3'))
+	  {string[12]='H'; string[13]=string[14];
+	    string[14]=string[15]; string[15]=c; 
+	  }
+      }
+    }
   
     /* Read residue; check if water molecule */
     res_type[0]=string[17]; res_type[1]=string[18]; res_type[2]=string[19];
     res_type[3]='\0';
-    if((hetatm==1)&&((strncmp(res_type,"HOH",3)==0)||(strncmp(res_type,"DOD",3)==0)))continue;
+    if((hetatm==1)&&((strncmp(res_type,"HOH",3)==0)||
+		     (strncmp(res_type,"DOD",3)==0)))continue;
 
     icode=string[26]; string[26]=' ';
 
@@ -453,7 +448,9 @@ int Read_coord(char *pdb_name, int *nmr,
     sscanf(&string[22],"%d %f %f %f", &res_num, &x, &y, &z); //modyves
 
     /* Check if alternative conformation */
-    if((string[72]=='A')&&(string[73]=='L')&&(string[74]=='T')&&(string[75]!='1')&&(string[75]!=' '))continue;
+    if(strncmp(string+72, "ALT", 3)==0 && strncmp(string+75, "1 ", 2)){
+      continue;
+    }
 
     altloc=string[16];
     if(altloc!=' '){
@@ -490,36 +487,32 @@ int Read_coord(char *pdb_name, int *nmr,
     atom_ptr->r[2] = z;
     
     // Copy name
-    if(string[12]!=' ')
-    	{ // Hydrogen atoms
-      	 if(strncmp(string+12, "SE", 2)==0)
-      	 	{// Selenium in Seleniomethionine is at delta position
-			 string[13]='D';
-      		}
-      	 for(ic=0; ic<3; ic++)atom_ptr->name[ic]=string[12+ic];
-    	}
-    else if(string[13]!=' ')
-     	{for(ic=0; ic<3; ic++)atom_ptr->name[ic]=string[13+ic];
-   		}
-    else
-    	{for(ic=0; ic<3; ic++)atom_ptr->name[ic]=string[14+ic];
-    	}
+    int iname;
+    if(string[12]!=' '){ // Hydrogen atoms
+      iname=12;
+      // Selenium in Seleniomethionine is at delta position
+      if(strncmp(string+12, "SE", 2)==0){string[14]='D';}
+    }else if(string[13]!=' '){
+      iname=13;
+    }else{
+      iname=14; // Caution: In PC_ALI it is iname=13
+    }
+    for(ic=0; ic<3; ic++)atom_ptr->name[ic]=string[iname+ic];
     atom_ptr->name[3]='\0';
-    
-    if(string[62]!=' ')
-    	{sscanf(string+60, "%f", &atom_ptr->B_factor);
-     	}
-     else
-     	{atom_ptr->B_factor=0;
-    	}
-    if(string[60]!=' ')string[60]=' ';
-    if(string[56]!=' ')
-    	{sscanf(string+54, "%f", &atom_ptr->occupancy);
-    	}
-    else
-    	{atom_ptr->occupancy=0;
-    	}
+    char *res3=string+17; //res3[4]='\0';
+    atom_ptr->type=get_atom_type(atom_ptr->name, res3, NULL);
 
+    if(string[62]!=' '){
+      sscanf(string+60, "%f", &atom_ptr->B_factor);
+    }else{
+      atom_ptr->B_factor=0;
+    }
+    if(string[60]!=' ')string[60]=' ';
+    if(string[56]!=' '){
+      sscanf(string+54, "%f", &atom_ptr->occupancy);
+    }else{
+      atom_ptr->occupancy=0;
+    }
     atom_ptr->chain=ichain;
   }
   Next_residue(&N_res, &start, seq, first_atom, &i_atom,
@@ -527,13 +520,13 @@ int Read_coord(char *pdb_name, int *nmr,
 	       &chain_old, &hetatm_old, n_exo,
 	       res_type, res_num, icode, chain, hetatm);
 	       
-  if(N_res > L_MAX)
-  	{printf("\n ERROR, more than %d residues found\n", L_MAX); exit(8);
-  	}
+  if(N_res > L_MAX){
+    printf("\n ERROR, more than %d residues found\n", L_MAX); exit(8);
+  }
   fclose(file_in);
-  printf("Reading %3d residues in %d chains: %s\n",N_res, nchains, chain_to_read);
+  printf("Reading %3d residues in %d chains: %s\n",
+	 N_res, nchains, chain_to_read);
   chain_to_read[nchains]='\0';
-  
   
   if(readall==0){free(rchain);rchain=NULL;} //modyves: this was never freed
   if(Compression)Delete_tmp_file();

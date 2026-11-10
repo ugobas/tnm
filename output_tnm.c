@@ -31,27 +31,35 @@ void Print_modes(int N_print, char *nameout,
   file_out=fopen(outfile, "w");
   printf("Writing normal modes to file %s\n", outfile);
 
+  int np=0, N_print_new=0;;
+  for(ia=0; ia<N; ia++){
+    if((select[ia])||PRINT_ALL){
+      np++; if(np==N_print){N_print_new=ia+1; break;}
+    }
+  }
+
   fprintf(file_out, "# %d degrees of freedom: %s\n", N, label);
   fprintf(file_out, "# Contribution to fluctuation: ");
-  for(ia=0; ia<N_print; ia++)
+  for(ia=0; ia<N_print_new; ia++)
     if((select[ia])||PRINT_ALL)
       fprintf(file_out, "\t%.3g", sigma2[ia]/sum_sigma2);
   fprintf(file_out, "\n");
   fprintf(file_out, "# e_values:                    ");
-  for(ia=0; ia<N_print; ia++)
+  for(ia=0; ia<N_print_new; ia++)
     if((select[ia])||PRINT_ALL)
       fprintf(file_out, "\t%.3g", 1./sigma2[ia]);
   fprintf(file_out, "\n");
   fprintf(file_out, "# collectivity:                ");
-  for(ia=0; ia<N_print; ia++)
+  for(ia=0; ia<N_print_new; ia++)
     if((select[ia])||PRINT_ALL)
       fprintf(file_out, "\t%.3g", collectivity[ia]);
   fprintf(file_out, "\n");
 
+
   if(strncmp(label, "Cart", 4)==0)cart=1;
   for(i=0; i<N; i++){
     fprintf(file_out, "%4d", i);
-    for(ia=0; ia<N_print; ia++)
+    for(ia=0; ia<N_print_new; ia++)
       if((select[ia])||PRINT_ALL)
 	fprintf(file_out, "\t%11.5g", Mode[ia][i]);
     if(cart==0){
@@ -166,8 +174,8 @@ void Print_mode_summary(char *nameout, char *label, struct Normal_Mode NM,
   }
 
   fprintf(file_out, "# Frequency reported in internal units: %.3f ps^(-1),"
-	  " om_q=kT/h/ is %.3g internal units (om_quantum-2)= %.3g\n",
-	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/(0.385*0.385));
+	  " kT/h/ is %.3g internal units (om-2)= %.3g\n",
+	  Freq_unit, 0.385/Freq_unit, Freq_unit*Freq_unit/0.1482);
   fprintf(file_out,"#mode pc_therm cumul ");
   fprintf(file_out,"om-2(harm) ");
   if(anharmonic)fprintf(file_out, "om-2(corr) om-2(anha) ");

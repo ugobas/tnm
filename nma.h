@@ -134,6 +134,7 @@ void Set_atom_axe(atom *atoms, struct chain *chains, int Nchain,
 void Principal_axis_frame(atom *atoms, int N_atoms, int *atom_ref,
 			  int N_atom_ref, struct axe *axes, int N_axes,
 			  int ANISOU);
+void Rotate_vector(float *vector, float **rot, int N_Cart);
 // Inertial set
 void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 		 struct Reference Ref);

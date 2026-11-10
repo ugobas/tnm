@@ -67,12 +67,16 @@ int Compute_kinetic(struct Jacobian *J,
 		    atom *atoms1, int natoms1,
 		    struct Reference Ref, int SQR)
 {
+  // For some reason that I do not remember anymore, the inertia tensor
+  // must be diagonal, otherwise the computation of the kinetic energy
+  // is not correct. This is done BEFORE compte_kinetic is called.
   int N_kin=0;
   int test=(J->Jacobian_ar[0][0]==0);
   // Put center of mass at the origin
   Center_atoms(atoms1, natoms1, Ref);
   // Reorient the Cartesian axes along the principal axes
-  //Reorient_axes(atoms1, natoms1, Ref);
+  //float **rot_inv=Allocate_mat2_f(3,3);
+  //Reorient_axes(atoms1, natoms1, rot_inv, Ref);
 
   Set_rot_shift(axe1, naxe1, atoms1, natoms1);
   Eckart_main(axe1, naxe1, atoms1, natoms1, Ref);
@@ -354,19 +358,35 @@ int Kinetic_sqrt(struct Jacobian *J, int *N_kin,
   {
     float **eigen_vector=Allocate_mat2_f(N, N);
     float eigen_value[N], t, t_inv;
-    int num=0, ik;
+    int num=0, ik=0;
     if(J->T_sqrt_inv)Empty_matrix_f(J->T_sqrt_inv, N);
     J->T_sqrt_inv=Allocate_mat2_f(N, N);
     d_Diagonalize(N, J->T, eigen_value, eigen_vector, 1);
+    // CHANGE 6/10/2026, the previous was wrong
+
     for(k=0; k<N; k++){
       if(eigen_value[k]<E_MIN){t=0; num++; continue;}
-      else{t=sqrt(eigen_value[k]); t_inv=1./t; ik=k-num;}
-      for(l=0; l<N; l++){
+      else{t=sqrt(eigen_value[k]); t_inv=1./t; ik=k++;}
+      for(int a=0; a<N; a++){
+	for(int b=0; b<=a; b++){
+	  float ev_ab=eigen_vector[ik][a]*eigen_vector[ik][b];
+	  J->T_sqrt[a][b]=t*ev_ab;
+	  J->T_sqrt_inv[a][b]=t_inv*ev_ab;
+	}
+      }
+      /*for(l=0; l<N; l++){
 	J->T_sqrt[l][ik]=t*eigen_vector[k][l];
 	if(t)J->T_sqrt_inv[ik][l]=eigen_vector[k][l]*t_inv;
-      }
+	}*/
     }
     if(num)printf("WARNING, kinetic energy has %d null modes\n", num);
+    for(int a=0; a<N; a++){
+      for(int b=a+1; b<N; b++){
+	  J->T_sqrt[a][b]=J->T_sqrt[b][a];
+	  J->T_sqrt_inv[a][b]=J->T_sqrt_inv[b][a];
+	}
+      }
+
     (*N_kin)-=num;
     Empty_matrix_f(eigen_vector, N);
   }
@@ -588,8 +608,8 @@ int Compute_Jtilde(struct Jacobian *J)
   if(J->Jtilde_ar==NULL)
     J->Jtilde_ar=Allocate_mat2_f(J->N_axes, J->N_Cart);
   if(J->T_sqrt_inv!=NULL){
-    // T_sqrt is not lower diagonal!
-    for(a=0; a<J->N_kin; a++){
+    // Null modes (N_kin<N_axes), T_sqrt is not lower diagonal!
+    for(a=0; a<J->N_axes; a++){ // 
       for(i=0; i<J->N_Cart; i++){
 	double sum=0;
 	for(b=0; b<J->N_axes; b++)
@@ -829,7 +849,8 @@ void Empty_Jacobian(struct Jacobian J)
   if(J.Jtilde_ar!=NULL)Empty_matrix_f(J.Jtilde_ar, J.N_axes);
   if(J.T_sqrt!=NULL)Empty_matrix_d(J.T_sqrt, J.N_axes);
   if(J.T_sqrt_inv!=NULL)Empty_matrix_f(J.T_sqrt_inv, J.N_axes);
-  if(J.T_sqrt_tr!=NULL)Empty_matrix_f(J.T_sqrt_tr, J.N_kin); //modyves: this was never freed
+  if(J.T_sqrt_inv_tr!=NULL)Empty_matrix_f(J.T_sqrt_inv_tr, J.N_kin);
+  if(J.T_sqrt_tr!=NULL)Empty_matrix_f(J.T_sqrt_tr, J.N_kin); 
 }
 
 float Empty_inertia(double *mr_tot, double **corr_sum)
@@ -857,7 +878,8 @@ float Sum_inertia(double *mr_tot, double **corr_sum,
   return(M_tot);
 }
 
-void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref)
+void Reorient_axes(atom *atoms, int N_atoms,
+		   float **rot_inv, struct Reference Ref)
 {
   double **inertia_tot=Allocate_mat2_d(3,3);
   double **corr_sum=Allocate_mat2_d(3,3);
@@ -920,6 +942,11 @@ void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref)
       printf("\n");
     }
     exit(8);
+  }
+
+  // Inverse rotation matrix is the transpose matrix
+  for(i=0; i<3; i++){
+    for(int j=0; j<3; j++){rot_inv[i][j]=rot[j][i];}
   }
 
   Empty_matrix_d(corr_sum, 3);

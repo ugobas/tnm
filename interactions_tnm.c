@@ -7,7 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "Var_dist.h"
 
+extern int INT_ATOM;
+extern float K_THR; // Where the force constant vanishes
+extern float K1_THR; // < K_THR, start of interpolatin region
 float C0_CA=6.0; // distance for normalizing contact interactions (CA)
 float C0_MIN=3.5; //3.5; // distance for normalizing contact interactions (MIN)
 //int IJ_MIN=2; // Minimum distance for computing backbone atom contacts
@@ -15,6 +19,7 @@ float C0_MIN=3.5; //3.5; // distance for normalizing contact interactions (MIN)
                   // for any residue pair
 
 /*******************************  Go model  *********************************/
+int Cont_comparison(struct interaction c1, struct interaction c2);
 int Interactions(struct interaction *Int_list, char *atom_type, float thr,
 		 atom *atoms, int N_atoms, int N_res);
 int Interactions_min(struct interaction *Int_list, float thr,
@@ -34,7 +39,7 @@ void Heavy_atoms_interactors(struct interaction *Int_list, int N_int,
 			     atom *atoms);
 int Heavy_atom(int *iatom, atom *atoms);
 
-void Compute_sec_der_old(struct interaction *Int_list, int N_int, float expo);
+void Compute_for_cons_old(struct interaction *Int_list, int N_int, float expo);
 void Purge_interactions_atom_res(int *N_int, struct interaction *Int_list,
 				 int nres);
 void Purge_interactions_res_pair(int *N_int, struct interaction *Int_list,
@@ -81,12 +86,13 @@ void Compute_interactions(int *N_int, struct interaction **Int_list,
   }else if(strncmp(INT_TYPE, "HYD", 3)==0){
     *N_int=Interactions_min(Int_tmp, C_THR, atoms, natoms, nres);
     //Heavy_atoms_interactors(Int_tmp, *N_int,atoms);
-  }else if(strncmp(INT_TYPE, "SCR", 3)==0){
-    *N_int=Screened_Interactions(Int_tmp,C_THR,atoms,natoms,nres,
-				 3,S_THR);
-  }else if(strncmp(INT_TYPE, "SHA", 3)==0){
-    *N_int=Screened_Interactions(Int_tmp,C_THR,atoms,natoms,nres,
-				 S_TYPE,S_THR);
+  }else if(strncmp(INT_TYPE, "SCR", 3)==0){ // S_TYPE=3
+    *N_int=Screened_Interactions(Int_tmp,atoms,natoms,nres,3,S_TOL,SCR_THR);
+    K_THR=SCR_THR;
+  }else if(strncmp(INT_TYPE, "SHA", 3)==0){ // S_TYPE=0 (
+    *N_int=Screened_Interactions(Int_tmp,atoms,natoms,nres,
+				 S_TYPE,S_TOL,SCR_THR);
+    K_THR=SCR_THR;
   }else if(strncmp(INT_TYPE, "HB", 2)==0){
     *N_int=Interactions_HB(Int_tmp, C_THR, atoms, natoms, nres,
 			   DA_THR, COS_DAA, ENE_HB);
@@ -97,25 +103,72 @@ void Compute_interactions(int *N_int, struct interaction **Int_list,
   }
   printf("%d interactions of type %s found\n", *N_int, INT_TYPE);
 
+  // Each atoms only interacts once per residue
+  if((ONEINT)&&
+     ((strncmp(INT_TYPE, "SCR", 3)==0)||(strncmp(INT_TYPE, "SHA", 3)==0))){
+    //Purge_interactions_atom_res(N_int, Int_list, nres);
+    Purge_interactions_res_pair(N_int, Int_tmp, nres);
+    printf("%d interactions after keeping 1 per residue pair\n", *N_int);
+  }
+
   int k;
   for(k=0; k<*N_int; k++){
     Int_tmp[k].res1=atoms[Int_tmp[k].i1].res;
     Int_tmp[k].res2=atoms[Int_tmp[k].i2].res;
   }
 
-  // Each atoms only interacts once per residue
-  if((ONEINT)&&
-     ((strncmp(INT_TYPE, "SCR", 3)==0)||(strncmp(INT_TYPE, "SHA", 3)==0))){
-    //Purge_interactions_atom_res(N_int, Int_list, nres);
-    Purge_interactions_res_pair(N_int, Int_tmp, nres);
-  }
- 
+  if(UNION || INTERSECT){
+    struct interaction *Int_tmp1=malloc(*N_int*sizeof(struct interaction));
+    for(k=0; k<*N_int; k++){Int_tmp1[k]=Int_tmp[k];}
+    struct interaction *Int_tmp2=malloc(INT_MAX*sizeof(struct interaction));
+    int N_int2=Interactions_min(Int_tmp2, C_THR, atoms, natoms, nres);
+    for(k=0; k<N_int2; k++){
+      Int_tmp2[k].res1=atoms[Int_tmp2[k].i1].res;
+      Int_tmp2[k].res2=atoms[Int_tmp2[k].i2].res;
+    }
+
+    if(UNION){printf("Union ");}
+    if(INTERSECT){printf("Intersection ");}
+    printf("of %d screened (%.1f) and %d MIN (%.1f) interactions:\n",
+	   *N_int, SCR_THR, N_int2, C_THR);
+    int m=0, j, k2=0, N_intersect=0, N_end=0;
+    for(k=0; k<*N_int; k++){
+      int intersect=0;
+      for(j=k2; j<N_int2; j++){ 
+	int cc=Cont_comparison(Int_tmp2[j], Int_tmp1[k]);
+	if(cc<0){
+	  if(UNION){Int_tmp[m]=Int_tmp2[j]; m++;}
+	}else if(cc==0){
+	  Int_tmp[m]=Int_tmp1[k]; m++; intersect=1; N_intersect++;
+	  k2=j+1; break;
+	}else{
+	  k2=j; break;
+	}
+      } // end j
+      if(UNION && intersect==0){Int_tmp[m]=Int_tmp1[k]; m++;}
+    } // end k
+    if(UNION){// Last contacts
+      for(j=k2; j<N_int2; j++){Int_tmp[m]=Int_tmp2[j]; m++; N_end++;}
+    }
+    free(Int_tmp1);
+    free(Int_tmp2);
+    if(m>INT_MAX){
+      printf("Error, too many contacts %d UNION= %d INTERSECT= %d\n",
+	     m, UNION, INTERSECT); exit(8);
+    }
+    *N_int=m; // Corrected, 5/10/2026
+    printf("%d interactions after UNION or INTERSECTION\n", *N_int);
+    printf("%d intersections, %d terminal pairs\n", N_intersect, N_end);
+  } // end UNION || INTERSECT
+
   C0=C0_MIN;
   if((strncmp(INT_TYPE,"CA",2)==0)||(strncmp(INT_TYPE,"CB",2)==0)||HNM)
     C0=C0_CA;
-  Compute_sec_der(Int_tmp, *N_int, nameout);
-  //Compute_sec_der(Int_tmp, *N_int, POW, EXP_HESSIAN, C0, C1_THR, C_THR);
-  //Compute_sec_der_old(Int_tmp, *N_int, EXP_HESSIAN);
+
+  Compute_for_cons(Int_tmp, *N_int, nameout);
+
+  //Compute_for_cons(Int_tmp, *N_int, POW, EXP_HESSIAN, C0, C1_THR, C_THR);
+  //Compute_for_cons_old(Int_tmp, *N_int, EXP_HESSIAN);
 
   *Int_list=malloc((*N_int)*sizeof(struct interaction));
   for(k=0; k<*N_int; k++)(*Int_list)[k]=Int_tmp[k];
@@ -141,16 +194,20 @@ int Interactions(struct interaction *Int_list, char *atom_type, float thr,
 
     for(res2=res1+1; res2<N_res; res2++){
       if(Find_atom(atoms, &i2, res2, N_atoms, atom_type)< 0)continue;
-      atom2=atoms+i2;
-
+      int d12=res2-res1;
       // Interatomic distance
-      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d2>thr2)continue;
-      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d2>thr2)continue;
-      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d2>thr2)continue;
-
+      atom2=atoms+i2;
+      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d12>INT_STIFF && d2>thr2)continue;
+      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d12>INT_STIFF && d2>thr2)continue;
+      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d12>INT_STIFF && d2>thr2)continue;
+      
       // store interaction
-      Int_list[N_int].i1=i1; Int_list[N_int].i2=i2;
-      Int_list[N_int].r0=sqrt(d2); Int_list[N_int].sec_der=1;
+      struct interaction *Int=Int_list+N_int;
+      Int->i1=i1;
+      Int->i2=i2;
+      Int->r0=sqrt(d2);
+      Int->force_aa=1;
+      Int->for_cons=1;
       N_int++;
       if(N_int >= INT_MAX){
 	printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -161,6 +218,16 @@ int Interactions(struct interaction *Int_list, char *atom_type, float thr,
   return(N_int);
 }
 
+int Cont_comparison(struct interaction c1, struct interaction c2){
+  if(c1.res1 < c2.res1){return(-1);}
+  else if(c1.res1 == c2.res1){
+    if(c1.res2 < c2.res2){return(-1);}
+    else if(c1.res2 == c2.res2){return(0);}
+    else{return(1);}
+  }else{
+    return(1);
+  }
+}
 
 int Interactions_hnm(struct interaction *Int_list, char *atom_type, float thr,
 		     atom *atoms, int N_atoms, int N_res)
@@ -178,21 +245,24 @@ int Interactions_hnm(struct interaction *Int_list, char *atom_type, float thr,
 
     for(res2=res1+1; res2<N_res; res2++){
       if(Find_atom(atoms, &i2, res2, N_atoms, atom_type)< 0)continue;
+      int d12=res2-res1;
       atom2=atoms+i2;
-
       // Interatomic distance
-      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d2>thr2)continue;
-      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d2>thr2)continue;
-      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d2>thr2)continue;
+      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d12>INT_STIFF && d2>thr2)continue;
+      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d12>INT_STIFF && d2>thr2)continue;
+      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d12>INT_STIFF && d2>thr2)continue;
 
       // store interaction
-      Int_list[N_int].i1=i1; Int_list[N_int].i2=i2;
-      Int_list[N_int].r0=sqrt(d2);
+      struct interaction *Int=Int_list+N_int;
+      Int->i1=i1;
+      Int->i2=i2;
+      Int->r0=sqrt(d2);
       if(d2<=4){
-	Int_list[N_int].sec_der=205*sqrt(d2)-571.2;
+	Int->for_cons=205*sqrt(d2)-571.2;
       }else{
-	Int_list[N_int].sec_der=305.9*pow(d2, -3);
+	Int->for_cons=305.9*pow(d2, -3);
       }
+      Int->force_aa=Int->for_cons;
       N_int++;
       if(N_int >= INT_MAX){
 	printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -241,6 +311,7 @@ int Interactions_min(struct interaction *Int_list, float thr,
     i2_start=i1_start+1; ij=0;
 
     for(res2=res1+1; res2<N_res; res2++){ // Omit i+1 because covalent
+      int d12=res2-res1;
       while(atoms[i2_start].res< res2)i2_start++;
 
       int i1_min=i1_start, i2_min=i2_start, ncheck=0;
@@ -256,7 +327,7 @@ int Interactions_min(struct interaction *Int_list, float thr,
 	  //if(atom2->name[0]=='H')continue;
 
 	  // Check if covalent
-	  if((NOCOV) && Covalent(res1, res2, atom1, atom2))continue;
+	  if(NOCOV && Covalent(res1, res2, atom1, atom2)){continue;}
 	  //if((ij<IJ_MIN)&&(ib)&&(Backbone(atom2->name)))continue;
 	  ncheck++;
 
@@ -271,20 +342,14 @@ int Interactions_min(struct interaction *Int_list, float thr,
 	}
       }
 
-      /*  if((res1==29)&&(res2==104)){
-	atom2=atoms+i1_min;
-	printf("d=%.5g ", sqrt(d2_min));
-	printf("a1: %s %d r %d  ",atom2->name, i1_min, atom2->res);
-	atom2=atoms+i2_min;
-	printf("a1: %s %d r %d\n",atom2->name, i2_min, atom2->res);
-	exit(8);
-      }
-      */
-
       // store interaction
-      if(d2_min < thr2){
-	Int_list[N_int].i1=i1_min; Int_list[N_int].i2=i2_min;
-	Int_list[N_int].r0=sqrt(d2_min); Int_list[N_int].sec_der=1;
+      if(d2_min < thr2 || d12<= INT_STIFF){
+	struct interaction *Int=Int_list+N_int;
+	Int->i1=i1_min;
+	Int->i2=i2_min;
+	Int->r0=sqrt(d2_min);
+	Int->for_cons=1;
+	Int->force_aa=1;
 	N_int++;
 	if(N_int >= INT_MAX){
 	  printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -373,7 +438,7 @@ int Interactions_min_M(struct interaction *Int_list, float thr,
 	  atom2=atoms+i2; if(atom2->res != res2)break;
 
 	  // Check if covalent
-	  if((NOCOV) && Covalent(res1, res2, atom1, atom2))continue;
+	  if(NOCOV && Covalent(res1, res2, atom1, atom2)){continue;}
 
 	  // Interatomic distance
 	  d=atom2->r[0]-atom1->r[0];
@@ -398,8 +463,12 @@ int Interactions_min_M(struct interaction *Int_list, float thr,
 
       // store interaction
       for(k=0; k<n_int; k++){
-	Int_list[N_int].i1=i1_min[k]; Int_list[N_int].i2=i2_min[k];
-	Int_list[N_int].r0=sqrt(d2_min[k]); Int_list[N_int].sec_der=1;
+	struct interaction *Int=Int_list+N_int;
+	Int->i1=i1_min[k];
+	Int->i2=i2_min[k];
+	Int->r0=sqrt(d2_min[k]);
+	Int->for_cons=1;
+	Int->force_aa=1;
 	N_int++;
 	if(N_int >= INT_MAX){
 	  printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -412,20 +481,29 @@ int Interactions_min_M(struct interaction *Int_list, float thr,
   return(N_int);
 }
 
-
 int Covalent(int res1, int res2, atom *atom1, atom *atom2){
-  if(res2!=(res1+1))return(0);
+  if(res2!=(res1+1)){return(0);}
+   if(strncmp(atom2->name, "N ", 2)==0 &&
+      strncmp(atom1->name, "C ", 2)==0){return(1);}
+  return(0);
+}
+
+/*
+int Covalent_old(int res1, int res2, atom *atom1, atom *atom2){
+      // Old version: 
+  if(res2==(res1+1))return(0);
   if((strncmp(atom2->name, "N ", 2)==0)&&
-       ((strncmp(atom1->name, "O ", 2)==0)
-	||(strncmp(atom1->name, "CA", 2)==0)
-	||(strncmp(atom1->name, "C ", 2)==0)
-	))return(1);
+     ((strncmp(atom1->name, "O ", 2)==0)
+      ||(strncmp(atom1->name, "CA", 2)==0)
+      ||(strncmp(atom1->name, "C ", 2)==0)
+      ))return(1);
   if((strncmp(atom2->name, "CA", 2)==0)&&
      (strncmp(atom1->name, "C ", 2)==0)
      //||(strncmp(atom1->name, "O ", 2)==0)
      )return(1);
   return(0);
 }
+*/
 
 int Bond(int res3, int res1, float d2_13, int res2, float d2_23)
 {
@@ -451,6 +529,7 @@ int Interactions_all(struct interaction *Int_list, float thr,
     i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
+      int d12=res2-res1;
       while(atoms[i2_start].res< res2)i2_start++;
 
       // Check if contact
@@ -460,18 +539,22 @@ int Interactions_all(struct interaction *Int_list, float thr,
 	  atom2=atoms+i2; if(atom2->res != res2)break;
 
 	  // Check if covalent
-	  if((NOCOV) && Covalent(res1, res2, atom1, atom2))continue;
+	  if(d12==1 && NOCOV &&  Covalent(res1, res2, atom1, atom2)){continue;}
 
 	  // Interatomic distance
-	  d=atom2->r[0]-atom1->r[0];
-	  d2 =d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  d=atom2->r[1]-atom1->r[1];
-	  d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  d=atom2->r[2]-atom1->r[2];
-	  d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  if(d2 < thr2){
-	    Int_list[N_int].i1=i1; Int_list[N_int].i2=i2;
-	    Int_list[N_int].r0=sqrt(d2); Int_list[N_int].sec_der=1;
+	  d=atom2->r[0]-atom1->r[0]; d2 =d*d;
+	  if(d2>thr2 && d12>INT_STIFF){if(d2 > t_max2)goto next2; continue;}
+	  d=atom2->r[1]-atom1->r[1]; d2+=d*d;
+	  if(d2>thr2 && d12>INT_STIFF){if(d2 > t_max2)goto next2; continue;}
+	  d=atom2->r[2]-atom1->r[2]; d2+=d*d;
+	  if(d2>thr2 && d12>INT_STIFF){if(d2 > t_max2)goto next2; continue;}
+	  if(d2 < thr2 || d12<=INT_STIFF){
+	    struct interaction *Int=Int_list+N_int;
+	    Int->i1=i1;
+	    Int->i2=i2;
+	    Int->r0=sqrt(d2);
+	    Int->for_cons=1;
+	    Int->force_aa=1;
 	    N_int++;
 	    if(N_int >= INT_MAX){
 	      printf("ERROR, too many interactions %d\n", N_int);
@@ -513,6 +596,7 @@ int Interactions_all_ref(struct interaction *Int_list, float thr,
     i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
+      int d12=res2-res1;
       while(atoms[i2_start].res< res2)i2_start++;
       CB2=i2_start;
       if(Find_atom(atoms, &CB2, res2, N_atoms, REF)<0){
@@ -528,28 +612,33 @@ int Interactions_all_ref(struct interaction *Int_list, float thr,
 	atom1=atoms+i1; if(atom1->res != res1)break;
 	for(i2=i2_start; i2<N_atoms; i2++){
 	  atom2=atoms+i2; if(atom2->res != res2)break;
-
+	  
 	  // Check if covalent
-	  if((NOCOV) && Covalent(res1, res2, atom1, atom2))continue;
-
+	  if(NOCOV && Covalent(res1, res2, atom1, atom2)){continue;}
+	  
 	  // Interatomic distance
-	  d=atom2->r[0]-atom1->r[0];
-	  d2 =d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  d=atom2->r[1]-atom1->r[1];
-	  d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  d=atom2->r[2]-atom1->r[2];
-	  d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
-	  if(d2 < d2_min)d2_min=d2; //i1_min=i1; i2_min=i2;}
+	  if(d12>INT_STIFF){
+	    d=atom2->r[0]-atom1->r[0];
+	    d2 =d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
+	    d=atom2->r[1]-atom1->r[1];
+	    d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
+	    d=atom2->r[2]-atom1->r[2];
+	    d2+=d*d; if(d2>thr2){if(d2 > t_max2)goto next2; continue;}
+	    if(d2 < d2_min)d2_min=d2; //i1_min=i1; i2_min=i2;}
+	  }
 	}
       }
 
       // store interaction
-      if(d2_min < thr2){
+      if(d2_min < thr2 || d12<=INT_STIFF){
 	// Interacting atoms set as CB (CA if Gly)
-	Int_list[N_int].i1=CB1; Int_list[N_int].i2=CB2;
-	//Int_list[N_int].r0=sqrt(Dist2(atoms[CB1].r, atoms[CB2].r));
-	Int_list[N_int].r0=sqrt(d2_min);
-	Int_list[N_int].sec_der=1;
+	struct interaction *Int=Int_list+N_int;
+	Int->i1=CB1;
+	Int->i2=CB2;
+	//Int->r0=sqrt(Dist2(atoms[CB1].r, atoms[CB2].r));
+	Int->r0=sqrt(d2_min);
+	Int->for_cons=1;
+	Int->force_aa=1;
 	N_int++;
 	if(N_int >= INT_MAX){
 	  printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -582,6 +671,7 @@ int Interactions_HB(struct interaction *Int_list, float thr,
     i2_start=i1_start+1;
 
     for(res2=res1+1; res2<N_res; res2++){
+      int d12=res2-res1;
       while(atoms[i2_start].res< res2)i2_start++;
       d2_min=10000; i_hb=0;
 
@@ -594,7 +684,7 @@ int Interactions_HB(struct interaction *Int_list, float thr,
 	  if((i_hb)&&(atom2->name[0]!='N')&&(atom2->name[0]!='O'))continue;
 
 	  // Check if covalent
-	  if((NOCOV) && Covalent(res1, res2, atom1, atom2))continue;
+	  if(NOCOV && Covalent(res1, res2, atom1, atom2)){continue;}
 
 	  // Interatomic distance
 	  d=atom2->r[0]-atom1->r[0];
@@ -619,10 +709,14 @@ int Interactions_HB(struct interaction *Int_list, float thr,
       }
 
       // store interaction
-      if((i_hb)||(d2_min >= thr2))goto next2;
-      Int_list[N_int].type=1;
-      Int_list[N_int].i1=i1_min; Int_list[N_int].i2=i2_min;
-      Int_list[N_int].r0=sqrt(d2_min); Int_list[N_int].sec_der=1;
+      if((i_hb)||((d2_min >= thr2)&& d12>INT_STIFF))goto next2;
+      struct interaction *Int=Int_list+N_int;
+      Int->type=1;
+      Int->i1=i1_min;
+      Int->i2=i2_min;
+      Int->r0=sqrt(d2_min);
+      Int->for_cons=1;
+      Int->force_aa=1;
       N_int++;
       if(N_int >= INT_MAX){
 	printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -635,29 +729,29 @@ int Interactions_HB(struct interaction *Int_list, float thr,
 }
 
 
-void Compute_sec_der(struct interaction *Int_list, int N_int, char *nameout)
+void Compute_for_cons(struct interaction *Int_list, int N_int, char *nameout)
 {
   // Normalize such that the average contact interaction does
   // not depend on C and E
 
   // Set parameters for force constant computation
-  printf("Computing force constant\n");
+  printf("Computing %d force constants\n", N_int);
 
-  C1_THR=C_THR; //-0.025; // Lower threshold for interpolation
-  printf("Interpolating to zero between %.3f and %.3f\n", C1_THR, C_THR);
-  if(C_THR>C1_THR){K1=KAPPA/(C_THR-C1_THR);}
+  K1_THR=K_THR; //-0.025; // Lower threshold for interpolation
+  if(K_THR>K1_THR){K1=KAPPA/(K_THR-K1_THR);}
   else{K1=0;}
 
   if(POW){ // power law: C0^-e
     K0=KAPPA*pow(C0,EXP_HESSIAN); 
-    K1*=pow((C1_THR/C0),-EXP_HESSIAN);
+    K1*=pow((K1_THR/C0),-EXP_HESSIAN);
     printf("Power law k= %.3g (r/%.1f)^-%.1f\n", KAPPA, C0, EXP_HESSIAN);
   }else{
     K0=KAPPA*exp(C0*EXP_HESSIAN);
-    K1*=exp((C0-C1_THR)*EXP_HESSIAN);
+    K1*=exp((C0-K1_THR)*EXP_HESSIAN);
     printf("Exponential law k= %.3g exp(-(r/%.1f)*%.1f\n",
 	   KAPPA, C0, EXP_HESSIAN);
   }
+  printf("Interpolating to zero between %.2f and %.2f\n", K1_THR, K_THR);
 
   char name_out[200];
   if(nameout){
@@ -666,38 +760,56 @@ void Compute_sec_der(struct interaction *Int_list, int N_int, char *nameout)
     //if(POW){sprintf(name_out, "%s_POW_%.1f.dat", name_out, EXP_HESSIAN);}
     //else{sprintf(name_out, "%s_EXP_%.1f.dat", name_out, EXP_HESSIAN);}
     FILE *file_out=fopen(name_out, "w");
-    fprintf(file_out, "# POW= %d EXPO= %.2f C0= %.2f KAPPA= %.2f\n",
-	    POW, EXP_HESSIAN, C0, KAPPA);
-    
+
+    if(INT_ATOM){
+      fprintf(file_out, "# Force constant inversely proportional to variance "
+	      "of atom types distance\n");
+      printf("# Force constant inversely proportional to variance "
+	     "of atom types distance\n");
+    }    
+    fprintf(file_out, "# POW= %d EXPO= %.2f C0= %.2f KAPPA= %.2f "
+	    "K_THR= %.2f K1_THR= %.2f %d interactions\n",
+	    POW, EXP_HESSIAN, C0, KAPPA, K_THR, K1_THR, N_int);
+
+    printf("# Force constant: POW= %d EXPO= %.2f C0= %.2f KAPPA= %.2f "
+	   "K_THR= %.2f K1_THR= %.2f\n",
+	   POW, EXP_HESSIAN, C0, KAPPA, K_THR, K1_THR);
+
+
     if(POW){ // power law: C0^-e
       fprintf(file_out, "# f(r)= %.2f (%.2f/r)^%.2f if r< %.2f\n",
-	      KAPPA, C0, EXP_HESSIAN, C1_THR);
+	      KAPPA, C0, EXP_HESSIAN, K1_THR);
     }else{ // Exponential
       fprintf(file_out, "# f(r)= %.2f exp((%.2f-r)%.2f) if r< %.2f\n",
-	      KAPPA, C0, EXP_HESSIAN, C1_THR);
+	      KAPPA, C0, EXP_HESSIAN, K1_THR);
     }
-    fprintf(file_out, "# f(r)= 0 r>= %.2f\n", C_THR);
+    fprintf(file_out, "# f(r)= 0 r>= %.2f\n", K_THR);
     fprintf(file_out, "# f(r)= linear interpolation %.2f < r < %.2f\n",
-	    C1_THR, C_THR);
+	    K1_THR, K_THR);
     
-    for(float r=2.0; r<C_THR; r+=0.05){
+    for(float r=2.0; r<K_THR; r+=0.2){
       float kappa=Force_constant(r);
       fprintf(file_out, "%.2f %.3g\n", r, kappa);
     }
     fclose(file_out);
   }
 
+  int n_err=0;
+  struct interaction *Int=Int_list;
   for(int n=0; n<N_int; n++){
-    if(Int_list[n].r0<=0){
-      printf("ERROR, d2= %.2f\n", Int_list[n].r0); exit(8);
+    if(Int->r0<=0){
+      printf("ERROR at pair %d, d2= %.2f\n", n, Int->r0);
+      n_err++; Int++; continue;
     }
-    Int_list[n].sec_der*=Force_constant(Int_list[n].r0);
+    Int->for_cons*=Force_constant(Int->r0);
+    Int++;
   }
+  if(n_err){exit(8);}
   if(0){
     printf("\nExpo= %.2f\nV''(r^PDB):\n", EXP_HESSIAN);
     for(int n=0; n<N_int; n++){
       printf("%d-%d %.2g %.2g\n", Int_list[n].res1, Int_list[n].res2,
-	     Int_list[n].r0, Int_list[n].sec_der);
+	     Int_list[n].r0, Int_list[n].for_cons);
     }
     exit(8);
   }
@@ -706,13 +818,60 @@ void Compute_sec_der(struct interaction *Int_list, int N_int, char *nameout)
 
 float Force_constant(float r)
 {
-  if(r <= C1_THR){
+  if(r <= K1_THR){
     if(POW){return(K0*pow(r, -EXP_HESSIAN));}
     else{return(K0*exp(-r*EXP_HESSIAN));}
-  }else if(r < C_THR){
-    return(K1*(C_THR-r));
+  }else if(r < K_THR){
+    return(K1*(K_THR-r));
   }else{
     return(0);
+  }
+}
+
+void Type_dependent_force(struct interaction *Int_list, int N_int,
+			  atom *atoms, int natoms,
+			  struct residue *res, int nres)
+{
+  if(INT_ATOM==0)return;
+  double sum=0;
+  struct interaction *Int=Int_list;
+  for(int n=0; n<N_int; n++){
+    float var=0; int t1=-1, t2=-1;
+    if(INT_ATOM>0){
+      int i1=Int->i1, i2=Int->i2;
+      if(i1<0 || i2<0 || i1>=natoms || i2>=natoms){
+	printf("ERROR, wrong interacting atoms %d %d, n=%d\n", i1,i2,natoms);
+	exit(8);
+      }
+      t1=atoms[i1].type; t2=atoms[i2].type; 
+      var=Var_dist_atom[t1][t2];
+    }else if(INT_ATOM<0){
+      int r1=Int->r1, r2=Int->r2;
+      if(r1<0 || r2<0 || r1>=nres || r2>=nres){
+	printf("ERROR, wrong interacting res %d %d, n=%d\n", r1,r2,nres);
+	exit(8);
+      }
+      t1=res[r1].i_aa; t2=res[r2].type;
+      var=Var_dist_res[t1][t2];
+    }
+    if(var >0){
+      //printf("%.3f %.3f\n", Int->for_cons, Int->for_cons/var);
+      Int->force_aa=1/var;
+      sum+=Int->force_aa;
+    }else{
+      printf("ERROR, wrong force constant "
+	     "INT_ATOM= %d t1=%d t2=%d var= %.2g\n",
+	     INT_ATOM, t1, t2, var);
+      exit(8);
+    }
+    Int++;
+  }
+  double factor=N_int/sum;
+  Int=Int_list;
+  for(int n=0; n<N_int; n++){
+    Int->force_aa*=factor;
+    Int->for_cons*=Int->force_aa;
+    Int++;
   }
 }
 
@@ -727,21 +886,29 @@ int Check_store_HB(struct interaction *Int_list, int *N_int,
   float cos_tau=Bond_angle(atoms[i_AA].r, atoms[i_A].r, atoms[i_D].r);
   if(cos_tau > COS_DAA)return(0);
   float d_DAA=Dist2(atoms[i_AA].r, atoms[i_D].r);
-  Int_list[*N_int].type=1;   Int_list[*N_int].sec_der=1;
-  Int_list[*N_int].r0=sqrt(d_DAA); 
+  struct interaction *Int=Int_list+*N_int;
+  Int->type=1;
+  Int->force_aa=1;
+  Int->for_cons=1;
+  Int->r0=sqrt(d_DAA); 
   if(rA==1){
-    Int_list[*N_int].i1=i_AA; Int_list[*N_int].i2=i_D;
+    Int->i1=i_AA;
+    Int->i2=i_D;
   }else{
-    Int_list[*N_int].i1=i_D;  Int_list[*N_int].i2=i_AA;
+    Int->i1=i_D;
+    Int->i2=i_AA;
   }
   (*N_int)++;
-  Int_list[*N_int].type=2; Int_list[*N_int].sec_der=ENE_HB;
+  Int++;
+  Int->type=2;
+  Int->force_aa=ENE_HB;
+  Int->for_cons=ENE_HB;
   if(rA==1){
-    Int_list[*N_int].i1=i_A; Int_list[*N_int].i2=i_D;
+    Int->i1=i_A; Int->i2=i_D;
   }else{
-    Int_list[*N_int].i1=i_D; Int_list[*N_int].i2=i_A;
+    Int->i1=i_D; Int->i2=i_A;
   }
-  Int_list[*N_int].r0=sqrt(d2);
+  Int->r0=sqrt(d2);
   (*N_int)++;
   return(1);
 }
@@ -779,7 +946,7 @@ void Print_contact_matrix(struct interaction *Int_list, int N_int,
 	    res[atoms[Int_list[i].i1].res].pdbres,
 	    res[atoms[Int_list[i].i2].res].pdbres,
 	    Int_list[i].r0);
-    if(SCR)fprintf(file_out, "\t%.4f", Int_list[i].sec_der);
+    if(SCR)fprintf(file_out, "\t%.4f", Int_list[i].for_cons);
     if(ALL)fprintf(file_out, "\t%s\t%s",
 		   atoms[Int_list[i].i1].name,
 		   atoms[Int_list[i].i2].name);
@@ -858,8 +1025,8 @@ void Purge_interactions_res_pair(int *N_int, struct interaction *Int_list,
 	if(ptr->res1 > res1)break;
 	if(ptr->res1 == res1){
 	  if(ptr->res2 == res2){
-	    if((res12==NULL)||(ptr->sec_der>res12->sec_der)||
-	       ((ptr->sec_der==res12->sec_der)&&(ptr->r0 < res12->r0))){
+	    if((res12==NULL)||(ptr->for_cons>res12->for_cons)||
+	       ((ptr->for_cons==res12->for_cons)&&(ptr->r0 < res12->r0))){
 	      res12=ptr;
 	    }
 	  }else if((ptr->res2 < res2min)&&(ptr->res2 > res2)){
@@ -920,8 +1087,8 @@ struct interaction *Check_pair(int *new1, int res1, int *res2, int nres,
     if(ptr->res1 > res1)break;
     if(ptr->res1 == res1){
       if(ptr->res2 == *res2){
-	if((res12==NULL)||(ptr->sec_der>res12->sec_der)||
-	   ((ptr->sec_der==res12->sec_der)&&(ptr->r0 < res12->r0))){
+	if((res12==NULL)||(ptr->for_cons>res12->for_cons)||
+	   ((ptr->for_cons==res12->for_cons)&&(ptr->r0 < res12->r0))){
 	  res12=ptr;
 	}
       }else if((ptr->res2 < res2min)&&(ptr->res2 > *res2)){
@@ -944,13 +1111,13 @@ void Select_pairs(int *selected, struct interaction **res12, int n12)
     kopt=-1;
     for(k=0; k<n12; k++){
       if(selected[k])continue;
-      if(res12[k]->sec_der==1){
+      if(res12[k]->for_cons==1){
 	if((kopt<0)||(res12[k]->r0 < w)){
 	  kopt=k; w=res12[k]->r0; 
 	}
       }else{
-	if((kopt<0)||(res12[k]->sec_der > w)){
-	  kopt=k; w=res12[k]->sec_der;
+	if((kopt<0)||(res12[k]->for_cons > w)){
+	  kopt=k; w=res12[k]->for_cons;
 	}
       } 
     }
@@ -976,16 +1143,16 @@ int Backbone(char *name){
   return(0);
 }
 
-void Compute_sec_der_old(struct interaction *Int_list, int N_int, float expo)
+void Compute_for_cons_old(struct interaction *Int_list, int N_int, float expo)
 {
   double t=0; int n;
     for(n=0; n<N_int; n++){
       if(Int_list[n].r0<=0){
 	printf("ERROR, d2= %.2f\n", Int_list[n].r0); exit(8);
       }
-      if(expo)Int_list[n].sec_der*=pow(Int_list[n].r0, -expo);
-      t+=Int_list[n].sec_der;
+      if(expo)Int_list[n].for_cons*=pow(Int_list[n].r0, -expo);
+      t+=Int_list[n].for_cons;
     }
     t/=N_int;
-    for(n=0; n<N_int; n++)Int_list[n].sec_der/=t;
+    for(n=0; n<N_int; n++)Int_list[n].for_cons/=t;
 }

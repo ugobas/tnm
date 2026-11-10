@@ -26,6 +26,7 @@
 # Progam files
 COBJ= main_tnm.o \
 	read.o \
+	atom_types.o atom_types_nuc.o \
 	atoms.o \
 	seqres.o \
 	vector.o \

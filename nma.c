@@ -195,6 +195,8 @@ void Empty_Normal_modes(struct Normal_Mode NM)
   free(NM.omega);
   free(NM.select); //modyves: was never freed
   free(NM.sigma2);
+  if(NM.sigma2_anhar){free(NM.sigma2_anhar);}
+  if(NM.d_KL){free(NM.d_KL);}
   free(NM.Cart_coll);
   free(NM.Tors_coll);
   free(NM.MW_Tors_coll);
@@ -211,6 +213,18 @@ void Empty_Normal_modes(struct Normal_Mode NM)
 
 }
 
+/********************** Vector rotations *********************/
+void Rotate_vector(float *vector, float **rot, int N_Cart){
+  int N_atoms=N_Cart/3, i, j;
+  float *v=vector; double rr[3];
+  for(i=0; i<N_atoms; i++){
+    for(j=0; j<3; j++){
+      rr[j]=rot[j][0]*v[0]+rot[j][1]*v[1]+rot[j][2]*v[2];
+    }
+    for(j=0; j<3; j++){v[j]=rr[j];}
+    v+=3;
+  }
+}
 
 /*********************************  INM ************************************/
 void Normal_modes_INM(int N,           //degrees of freedom
@@ -239,7 +253,7 @@ void Compute_Hessian_INM (double **Hessian, int N,
   for(i=0; i<N; i++)for(j=0; j<N; j++)Hessian[i][j]=0;
 
   for(n=0; n<N_int; n++){
-    float h=Int_list[n].sec_der;
+    float h=Int_list[n].for_cons;
     i=(atoms+Int_list[n].i1)->res;
     j=(atoms+Int_list[n].i2)->res;
     Hessian[i][j]=-h; Hessian[j][i]=-h;
@@ -291,7 +305,7 @@ void Compute_Hessian_ANM  (double **Hessian, int N_ref, int *atom_ref,
     r21[0]=atom2->r[0]-atom1->r[0];
     r21[1]=atom2->r[1]-atom1->r[1];
     r21[2]=atom2->r[2]-atom1->r[2];
-    norm=Int_list[n].sec_der/Scalar_product_3_d(r21, r21);
+    norm=Int_list[n].for_cons/Scalar_product_3_d(r21, r21);
 
     for(j1=0; j1<3; j1++){
       i1j1 = i1+j1; i2j1=i2+j1;
@@ -549,7 +563,7 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
     }
     Vector_product_d(cr21, r2, r1); //cr21= r2 X r1
 
-    double h=Int_list[n].sec_der;
+    double h=Int_list[n].for_cons;
     h/=(r21[0]*r21[0]+r21[1]*r21[1]+r21[2]*r21[2]);
 
     double dk[N_modes];
@@ -660,7 +674,7 @@ void Compute_Hessian_TNM(double **Hessian,  // Output
     else{printf("Diagonalization of kinetic energy\n");}
     printf("V''(r^PDB): ");
     for(n=0; n<N_int; n++)
-      printf(" %.2g:%.2g", Int_list[n].r0,Int_list[n].sec_der);
+      printf(" %.2g:%.2g", Int_list[n].r0,Int_list[n].for_cons);
     //printf(" %d-%d",Int_list[n].i1, Int_list[n].i2);
     printf("\n");
     int ini=N_modes-20;
@@ -1033,7 +1047,7 @@ int Convert_cart2torsion1(float *Tors_dev,
   double sum=0; int i, j, a;
 
   // Compute Masswtd_Tors_dev = Jtilde M Delta_r
-  for(a=0; a<J->N_axes; a++){
+  for(a=0; a<J->N_axes; a++){ //J->N_axes 
     float *Jt=J->Jtilde_ar[a]; sum=0;
     float *r=Cart_dev, *m=Ref.mass_coord;
     for(j=0; j<J->N_Cart; j++)sum+=m[j]*r[j]*Jt[j];

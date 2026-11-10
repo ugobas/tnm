@@ -5,11 +5,16 @@
 
 extern int S_TYPE;        // Type of shadow interaction
 extern int ONEINT;        // Only one interaction per atom vs. residue
-extern float S_THR;       // Screening parameter
+extern float S_TOL;       // Screening parameter
 extern int HNM;           // Calpha interactions with Hissen parameters
 extern int NOCOV;         // Covalent neighbors do not interact
+extern int INT_STIFF;     // Stiffness of main chain
 extern char REF[20];      // Reference atoms
 extern int N_RESRES;      // Number of interactions retained for each res pair
+extern int INTERSECT; // Intersection of two interactions types
+extern int UNION; // Union of two interaction types
+extern float C_THR, C_THR2;
+extern float SCR_THR;
 
 void Assign_interactions_SB(struct interaction *Int_list, int N_int,
 			    struct interaction **Int_KB, int *aa_seq);
@@ -18,7 +23,10 @@ void Assign_interactions_KB(struct interaction **Int_KB, int Na,
 void Print_interactions(struct interaction *Int_list, int N_int,
 			struct interaction **Int_KB,
 			int *aa_seq, char *AA_code, int NA, char *name);
-void Compute_sec_der(struct interaction *Int_list, int N_int, char *nameout);
+void Compute_for_cons(struct interaction *Int_list, int N_int, char *nameout);
+void Type_dependent_force(struct interaction *Int_list, int N_int,
+			  atom *atoms, int natoms,
+			  struct residue *res, int nres);
 
 /*******************************  Go model  *********************************/
 int Interactions(struct interaction *Int_list, char *atom_type, float thr,
@@ -39,9 +47,9 @@ void Compute_interactions(int *N_int, struct interaction **Int_list,
 /*int Interactions_shadow(struct interaction *Int_list, float THR,
 			atom *atoms, int N_atoms,
 			int TYPE, float S_THR, int NOCOV);*/
-int Screened_Interactions(struct interaction *Int_list,
-			  float THR, atom *atoms, int N_atoms, int nres,
-			  int TYPE, float DELTA_SCR);
+int Screened_Interactions(struct interaction *Int_list, //float THR, 
+			  atom *atoms, int N_atoms, int nres,
+			  int TYPE, float DELTA_SCR, float THR);
 
 void Print_contact_matrix(struct interaction *Int_list, int N_int,
 			  atom *atoms, struct residue *res,

@@ -10,6 +10,7 @@ float Sum_inertia(double *mr_tot, double **corr_sum,
 		  int ini_ref, int end_ref);
 float Empty_inertia(double *mr_tot, double **corr_sum);
 void Center_atoms(atom *atoms, int N_atoms, struct Reference Ref);
-void Reorient_axes(atom *atoms, int N_atoms, struct Reference Ref);
+void Reorient_axes(atom *atoms, int N_atoms,
+		   float **rot_inv, struct Reference Ref);
 void Eckart_main(struct axe *axes, int N_axes, atom *atoms, int N_atoms,
 		 struct Reference Ref);

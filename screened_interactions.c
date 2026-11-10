@@ -8,8 +8,7 @@
 #include "nma.h"
 
 #define RELAX_COV 0  // Less screening from covalently bound atoms
-
-static int RMAX=2000; // Maximum number of stored neighbors 
+static int RMAX=20; // Maximum number of stored neighbors per atom
 //static float DTHR=4.6; // Minimum weight: 2*exp(-DTHR)=0.02
 static int PROTECT=0; // Protect from screening MIN interactions?
 
@@ -18,6 +17,7 @@ struct store{
   int i;
   float x;
   struct store *next;
+  struct store *prev;
 };
 struct ranked{
   int num;
@@ -26,58 +26,72 @@ struct ranked{
   struct store *last;
 };
 
-int **Protect_interactions(struct ranked *rank, atom *atoms,
-			   int N_atoms, int nres);
+void Rank(struct ranked *rank, int i, float x, int Rmax);
+
+int Screening_new(float d2_ij, struct ranked *rank, int i1, int i2, 
+		  atom *atom_i, atom *atom_j, atom *atoms);
 int Screening_distance_old(float *e2_nb, float *e2_bo,
 			   int res1,struct store *store1,
 			   atom *atom2,atom *atom);
 int Screening_distance(float *d2_nb, float *d2_bo, float D2_NB, float D2_BO,
 		       struct store *store1, float d2_ij,
 		       atom *atom_i, atom *atom_j, atom *atoms);
+int **Protect_interactions(struct ranked *rank, atom *atoms,
+			   int N_atoms, int nres);
 int Shadow_cosine(float *d_nb, float *d_bo, float S_NB, float S_BO,
 		   struct store *store1, float d2_ij,
 		   atom *atom_i, atom *atom_j, atom *atoms);
 int Axis_distance(float *d_nb, float *d_bo, float S2_NB, float S2_BO,
 		   struct store *store1, float d2_ij,
 		   atom *atom_i, atom *atom_j, atom *atoms);
-int Axis_distance_S(float *d_nb, float *d_bo, float S_THR, float S_BOND,
+int Axis_distance_S(float *d_nb, float *d_bo, float S_TOL, float S_BOND,
 		     struct store *store1, float d2_ij,
 		     atom *atom_i, atom *atom_j, atom *atoms);
 
 static float Dist2(double *ri, double *rj);
 static float Scalar(double *ri, double *rj, double *rk);
-static void  Rank(struct ranked *rank, int i, float x, int Rmax);
 
-int Screened_Interactions(struct interaction *Int_list,
-			  float THR, atom *atoms, int N_atoms, int nres,
-			  int TYPE, float S_THR)
+int Screened_Interactions(struct interaction *Int_list, //float THR,
+			  atom *atoms, int N_atoms, int nres,
+			  int TYPE, float S_TOL, float THR)
 {
   // For each pair of atoms ij, determine e_ij such that
   // e_ij=min_k(max(d_ik,d_jk) (minimum of the maximum distance).
   // C_ij=exp(e_ij-d_ij)/(1+exp(e_ij-d_ij))-> 0 if e_ij << d_ij
   // Fast algorithm: for each i store the first RMAX neighbors d<thr
   // For each i and j in list of neighbors, find e_ij
-
+  
+  //float Thr=THR;
+  float Thr=THR, Thr2_max=Thr*Thr;
   int i1, i2, i;
   atom *atom1=atoms, *atom2;
-  float Thr=THR, thr2=Thr*Thr, d, d2;
 
   // Allocate and rank RMAX neighbors, including bonded
   struct ranked *rank=malloc(N_atoms*sizeof(struct ranked));
   for(i=0; i<N_atoms; i++){
     rank[i].num=0;
+    rank[i].first=NULL;
+    rank[i].last=NULL;
     rank[i].store=malloc(RMAX*sizeof(struct store));
   }
   for(i1=0; i1<N_atoms; i1++){
     atom2=atom1+1;
     struct ranked *rank1=rank+i1;
     for(i2=i1+1; i2<N_atoms; i2++){
+      struct ranked *rank2=rank+i2;
       // Interatomic distance
-      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d2>thr2)goto next;
-      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d2>thr2)goto next;
-      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d2>thr2)goto next;
-      Rank(rank1,  i2, d2, RMAX);
-      Rank(rank+i2,i1, d2, RMAX);
+      float Thr2, d, d2;
+      if(rank1->last && rank2->last){
+	Thr2=rank1->last->x;
+	if(rank2->last->x > Thr2){Thr2=rank2->last->x;}
+      }else{
+	Thr2=Thr2_max;
+      }
+      d=atom2->r[0]-atom1->r[0]; d2 =d*d; if(d2>Thr2)goto next;
+      d=atom2->r[1]-atom1->r[1]; d2+=d*d; if(d2>Thr2)goto next;
+      d=atom2->r[2]-atom1->r[2]; d2+=d*d; if(d2>Thr2)goto next;
+      Rank(rank1, i2, d2, RMAX);
+      Rank(rank2, i1, d2, RMAX);
     next:
       atom2++;
     }
@@ -85,18 +99,18 @@ int Screened_Interactions(struct interaction *Int_list,
   }
 
   // Thresholds
-  float S_BOND=S_THR;
+  float S_BOND=S_TOL;
   if(RELAX_COV){
-    if(TYPE==0){S_BOND=S_THR+(1.-S_THR)/2;} // cosine
-    else if(TYPE==1){S_BOND=0.5*S_THR;} // distance from axis
-    else if(TYPE==2){S_BOND=0.5*S_THR;} // Shadow
-    else if(TYPE==3){S_BOND=2*S_THR;}   // SCR
+    if(TYPE==0){S_BOND=S_TOL+(1.-S_TOL)/2;} // cosine
+    else if(TYPE==1){S_BOND=0.5*S_TOL;} // distance from axis
+    else if(TYPE==2){S_BOND=0.5*S_TOL;} // Shadow
+    else if(TYPE==3){S_BOND=2*S_TOL;}   // SCR
   }
-  float S2_NB=S_THR*S_THR, S2_BO=S_BOND*S_BOND; 
-  //float delta_nb=DTHR*S_THR;
+  float S2_NB=S_TOL*S_TOL, S2_BO=S_BOND*S_BOND; 
+  //float delta_nb=DTHR*S_TOL;
   //float delta_bo=DTHR*S_BOND;
   printf("Screened interactions type %d D=%.3f (nobond) %.3f (bond)\n",
-	 TYPE, S_THR, S_BOND);
+	 TYPE, S_TOL, S_BOND);
   if((TYPE<0)||(TYPE>3)){
     printf("ERROR, undefined type of screened interaction %d\n", TYPE);
     exit(8);
@@ -108,13 +122,14 @@ int Screened_Interactions(struct interaction *Int_list,
   // WARNING! store is a linked list !!!!!
 
   int N_int=0, tested=0, Nprotect=0;
-  float e2=1;
+  float e2=1, S2_TOL=S_TOL*S_TOL;
   for(i1=0; i1<N_atoms; i1++){
     atom1=atoms+i1;
     int res1=atom1->res, n=-1;
     struct store *store=rank[i1].first;
     while(store != NULL){
       if(protect)n++;
+      if(store->x > Thr2_max)goto No_int;
       i2=store->i;
       if(i2<=i1)goto No_int;
       atom2=atoms+i2;
@@ -129,13 +144,15 @@ int Screened_Interactions(struct interaction *Int_list,
 
       if(TYPE==3){
 	// SCR interactions
-	float d_ij=sqrt(d2_ij);
-	float D2_NB=d_ij-S_THR;  D2_NB*=D2_NB;
-	float D2_BO=d_ij-S_BOND; D2_BO*=D2_BO;
+	//float d_ij=sqrt(d2_ij);
+	//float D2_NB=d_ij-S_TOL;  D2_NB*=D2_NB;
+	//float D2_BO=d_ij-S_BOND; D2_BO*=D2_BO;
 	//Screening_distance(&e2_nb,&e2_bo,res2,rank[i2].first, atom1, atoms);
 	// Change 27/3/2015: weight SCR=0,1
-	if(Screening_distance(&d2_nb, &d2_bo, D2_NB, D2_BO,
-			      rank[i1].first, d2_ij, atom1, atom2, atoms))
+	//if(Screening_distance(&d2_nb, &d2_bo, D2_NB, D2_BO,
+	//		      rank[i1].first, d2_ij, atom1, atom2, atoms))
+	float d2_tol=d2_ij+S2_TOL-2*S_TOL*sqrt(d2_ij);
+	if(Screening_new(d2_tol, rank, i1, i2, atom1, atom2, atoms))
 	  goto No_int;
 
 	/* 
@@ -143,8 +160,8 @@ int Screened_Interactions(struct interaction *Int_list,
 	if(e2_nb > delta_nb)goto No_int;
 	e2_bo=sqrt(d2_ij)-sqrt(e2_bo);
 	if(e2_bo > delta_bo)goto No_int;
-	if(S_THR > 0){
-	  e2_nb=exp(-e2_nb/S_THR);
+	if(S_TOL > 0){
+	  e2_nb=exp(-e2_nb/S_TOL);
 	  e2_bo=exp(-e2_bo/S_BOND);
 	  if(e2_nb<e2_bo){e2=e2_nb/(1.+e2_nb);}
 	  else{e2=e2_bo/(1.+e2_bo);}
@@ -162,18 +179,18 @@ int Screened_Interactions(struct interaction *Int_list,
 	if(Axis_distance(&d2_nb, &d2_bo, S2_NB, S2_BO,
 			 rank[i1].first, d2_ij, atom1, atom2, atoms))
 	  goto No_int;
-	//w=exp(-d_min/S_THR); w=(1-w)/(1+w); if(w<0.005)goto No_int;
+	//w=exp(-d_min/S_TOL); w=(1-w)/(1+w); if(w<0.005)goto No_int;
 
       }else if(TYPE==2){
 	// Screening based on Onuchic radius
-	if(Axis_distance_S(&d2_nb, &d2_bo, S_THR, S_BOND,
+	if(Axis_distance_S(&d2_nb, &d2_bo, S_TOL, S_BOND,
 			   rank[i1].first, d2_ij, atom1, atom2, atoms))
 	  goto No_int;
       }
 
     store:
       Int_list[N_int].i1=i1; Int_list[N_int].i2=store->i;
-      Int_list[N_int].r0=sqrt(store->x); Int_list[N_int].sec_der=e2;
+      Int_list[N_int].r0=sqrt(store->x); Int_list[N_int].for_cons=e2;
       N_int++;
       if(N_int >= INT_MAX){
 	printf("ERROR, too many interactions %d\n", N_int); exit(8);
@@ -187,13 +204,14 @@ int Screened_Interactions(struct interaction *Int_list,
   // INform
   printf("%d pairs tested, %d screened interactions type %d found,",
 	 tested, N_int, TYPE);
-  printf(" screening par=%.4f cut-off distance=%.1f", S_THR, THR);
+  printf(" screening tolerance=%.4f cut-off =%.1f", S_TOL, Thr);
   //if(TYPE==3)printf("cut-off for screening=%.2g", 2*exp(-DTHR));
   printf("\n");
   printf("%d pairs protected from screening because of MIN\n", Nprotect);
 
   for(i=0; i<N_atoms; i++)free(rank[i].store);
   free(rank);
+  //exit(8);
 
   return(N_int);
 }
@@ -221,17 +239,46 @@ int Screening_distance_old(float *d2_nb, float *d2_bo,
   return(0);
 }
 
+int Screening_new(float d2_ij, struct ranked *rank, int i1, int i2, 
+		  atom *atom_i, atom *atom_j, atom *atoms)
+{
+  // Interaction not allowed if exists k with d_ik<d_ij, d_jk<d_ij
+  //int resi=atom_i->res, resj=atom_j->res;
+  struct store *store=rank[i1].first;
+  while(store != NULL){
+    if(store->x > d2_ij)break; // store1->x= d2_ik
+    atom *atom_k=atoms+store->i;
+    if(atom_k!=atom_j){
+      if(Dist2(atom_j->r, atom_k->r) < d2_ij){return(1);}
+    }
+    store=store->next;
+  }
+  store=rank[i2].first;
+  while(store != NULL){
+    if(store->x > d2_ij)break; // store1->x= d2_ik
+    atom *atom_k=atoms+store->i;
+    if(atom_k!=atom_i){
+      if(Dist2(atom_i->r, atom_k->r) < d2_ij){return(1);}
+    }
+    store=store->next;
+  }
+
+  return(0);
+}
+
 int Screening_distance(float *d2_nb, float *d2_bo, float D2_NB, float D2_BO,
 		       struct store *store1, float d2_ij,
 		       atom *atom_i, atom *atom_j, atom *atoms)
 {
+  // Interaction not allowed if 
   int resi=atom_i->res, resj=atom_j->res;
   while(store1 != NULL){
     if(store1->x > d2_ij)break; // store1->x= d2_ik
     atom *atom_k=atoms+store1->i;
     if(atom_k!=atom_j){
       float d2, d2_jk=Dist2(atom_j->r, atom_k->r);
-      if(d2_jk >= d2_ij)goto next3;
+      if(d2_jk > d2_ij){goto next3;}
+
       if(d2_jk > store1->x){
 	d2=d2_jk;
       }else{
@@ -395,67 +442,6 @@ float Scalar(double *ri, double *rj, double *rk){
   return(dijk);
 }
 
-void Rank(struct ranked *rank,  int i, float x, int Rmax)
-{
-  // Rank in decreasing order (lowest = 0)
-  if((rank->num >= Rmax)&&(x >= rank->last->x))return;
-
-  struct store *store;
-  if(rank->num==0){
-    store=rank->store;
-    store->i=i; store->x=x;
-    store->next=NULL;
-    rank->num=1;
-    rank->first=store;
-    rank->last= store;
-    return;
-  }
-
-  // Find position in the list
-  struct store *k=rank->first, *k1=k->next;
-  while(k1!=NULL){
-    if(k1->x >= x)break;
-    k=k1; k1=k1->next;
-  }
-
-  if(rank->num < Rmax){
-    store=rank->store+rank->num;
-    (rank->num)++;
-    if(x > rank->last->x)rank->last=store;
-  }else if(k1==NULL){
-    store=k; rank->last=k;
-  }else{
-    store=rank->last;
-    if(k1==rank->last){
-      k1=NULL;
-    }else{
-      struct store *k2=k1, *k3=k1->next->next;
-      while(k3!=NULL){k2=k2->next; k3=k3->next;}
-      rank->last=k2; k2->next=NULL;
-    }
-  }
-  if(x < rank->first->x){
-    rank->first=store; k1=k;
-  }else{
-    k->next=store;
-  }
-  store->i=i; store->x=x; store->next=k1;
-
-  /*printf("%d: ", rank->num);
-  struct store *k2=rank->first; float y=0;
-  while(k2!=NULL){
-    printf("%.2f ", k2->x); 
-    if(k2->x < y){
-      printf("\nERROR bad ordered list\n");
-      exit(8);
-    }
-    y=k2->x; k2=k2->next;
-  }
-  printf("\n");*/
-
-  return;
-}
-
 int **Protect_interactions(struct ranked *rank, atom *atoms,
 			   int N_atoms, int nres)
 {
@@ -509,4 +495,58 @@ int **Protect_interactions(struct ranked *rank, atom *atoms,
   printf("%d contacts protected from screening (MIN)\n", N_protect);
   free(ii2); free(i1start);
   return(protect);
+}
+
+void Rank(struct ranked *rank,  int i, float x, int Rmax)
+{
+  // Rank in decreasing order (lowest = 0)
+  struct store *store, *last;
+  if(rank->num >= Rmax){
+    if(x >= rank->last->x)return;
+    store=rank->last;
+    store->i=i;
+    store->x=x;
+    last=rank->last->prev;
+  }else{
+    store=rank->store+rank->num;
+    store->i=i;
+    store->x=x;
+    (rank->num)++;
+    if(rank->num==1){
+      store->next=NULL;
+      store->prev=NULL;
+      rank->first= store;
+      rank->last= store;
+      return;
+    }
+    last=rank->last;
+  }
+
+  // Find position in the list
+  if(x  >= last->x){
+    rank->last= store;
+    store->prev=last; last->next=store;
+    store->next=NULL;
+    return;
+  }else{
+    rank->last= last;
+    last->next=NULL;
+  }
+
+  struct store *k=last, *k1=k->prev;
+  while(k1 != NULL){
+    if(x >= k1->x){
+      store->prev=k1; k1->next=store;
+      store->next=k;  k->prev=store; 
+      return;
+    }
+    k = k1; k1 = k1->prev;
+  }
+  if(k1==NULL){
+    store->prev=NULL; rank->first= store;
+    store->next=k; k->prev=store; 
+  }
+  else{printf("ERROR in Ranking\n"); exit(8);}
+
+  return;
 }

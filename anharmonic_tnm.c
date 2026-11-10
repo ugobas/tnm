@@ -672,7 +672,7 @@ float Energy_anharmonic_new(struct inter_new *New_inter,
 			    struct interaction *Int_list, int N_int,
 			    struct interaction **Int_KB, int NA,
 			    struct axe *axe, int naxes,
-			    double *delta_phi, int K_tors, int sec_der)
+			    double *delta_phi, int K_tors, int for_cons)
 {
 
   if(INI_ENERGY==0){
@@ -728,7 +728,7 @@ float Energy_anharmonic_new(struct inter_new *New_inter,
 	Int->rji[j]=r2[j]-r1[j];
       }
       Vector_product(Int->crij, r1, r2);
-      if(sec_der){
+      if(for_cons){
 	Int->f2=Compute_V2(Int_k, d, 1); // do not assume it is minimum!
       }
     }
@@ -871,13 +871,13 @@ double Energy_covalent(float *r, atom *atoms, int natoms,
       if(bond->previous && bond->len<0){
 	Int_cov->i1=bond->i_atom; Int_cov->i2=bond->previous->i_atom;
 	if(Dist_thr(Int_cov, atoms)){
-	  Int_cov->sec_der=E_COV_FACT; Int_cov++; n++;
+	  Int_cov->for_cons=E_COV_FACT; Int_cov++; n++;
 	}
 	if(bond->previous->previous && bond->angle<0){
 	  Int_cov->i1=bond->i_atom;
 	  Int_cov->i2=bond->previous->previous->i_atom;
 	  if(Dist_thr(Int_cov, atoms)){
-	    Int_cov->sec_der=E_COV_FACT; Int_cov++; n++;
+	    Int_cov->for_cons=E_COV_FACT; Int_cov++; n++;
 	  }
 	}
 	if(n>nmax){printf("ERROR too many covalent bonds\n"); exit(8);}
@@ -886,7 +886,7 @@ double Energy_covalent(float *r, atom *atoms, int natoms,
     }
     printf("%d covalent bonds stored for %d atoms\n", n, natoms);
     N_cov=n;
-    Compute_sec_der(Int_list_cov, N_cov, NULL);
+    Compute_for_cons(Int_list_cov, N_cov, NULL);
     double E_rep_tmp=E_repulsion; E_repulsion*=E_COV_FACT;
     Assign_interactions_SB(Int_list_cov, N_cov, NULL, NULL);
     E_repulsion=E_rep_tmp;
@@ -982,7 +982,7 @@ void Assign_interactions_KB(struct interaction **Int_KB, int Na,
       }
       Int_ptr->r1=r3;
       Int_ptr->r2=r3;
-      Int_ptr->sec_der=Compute_V2(Int_ptr, Int_ptr->r0, 0);
+      Int_ptr->for_cons=Compute_V2(Int_ptr, Int_ptr->r0, 0);
       Int_ptr->a0=0; Int_ptr->a1=0; Int_ptr->a2=0;
       Int_ptr->a3=0; Int_ptr->a4=0; Int_ptr->a5=0;
       //Interpolation(Int_ptr, NULL, r3, C_THR);
@@ -1048,6 +1048,7 @@ void Assign_interactions_SB(struct interaction *Int_list, int N_int,
   printf("Assigning structure-based interactions\n");
   printf("--> NPAR  = %8d        number of parameters: ",NPAR);
   printf("2 (Morse) 3 (barrier)\n");
+  printf("--> C_THR= %.2f C1_THR= %.2f lambda= %.3f\n", C_THR, C1_THR, lambda); 
   printf("--> N_int = %8d        number of native interactions\n",N_int);
   printf("--> Int_list[]         list of all native interactions\n");
   printf("--> Int_KB[][]         knowledge-based interactions\n");
@@ -1055,39 +1056,40 @@ void Assign_interactions_SB(struct interaction *Int_list, int N_int,
   printf("--> OUTPUT: Int_list gets filled up with energy parameters\n");
 
   int n, n_err=0; struct interaction *Int=Int_list, *I_KB=NULL;
+  double fc;
+  if(POW){fc=pow(C_THR, -lambda);}
+  else{fc=exp(-lambda*C_THR); }
+  double fc2=fc*fc;
   for(n=0; n<N_int; n++){
     double V0, r3;
     Int->r1=100;
     if(NPAR==2 || aa_seq==NULL || Int_KB==NULL){
       Int->A1=0;
       Int->A4=E_repulsion;
-      double fc;
       if(POW){
 	Int->A2=-2*Int->A4*pow(Int->r0, -lambda_2);
-	fc=pow(C_THR, -lambda);
       }else{
 	Int->A2=-2*Int->A4*exp(-lambda_2*Int->r0);
-	fc=exp(-lambda*C_THR);
       }
-      double fc2=fc*fc;
       Int->A0=-Int->A4*fc2*fc2-Int->A2*fc2;
       V0=Compute_V(Int, Int->r0);
     }else{
       int a=aa_seq[Int->res1], b=aa_seq[Int->res1];
       I_KB=Int_KB[a]+b;
       V0=Compute_V(I_KB, Int->r0);
-      if(Determine_Ak(Int, V0, Int->sec_der, n))n_err++;
+      if(Determine_Ak(Int, V0, Int->for_cons, n))n_err++;
       if(Int->A4<0){
 	printf("POWER= %d lambda= %.2f (rSB/rKB)= %.3g\n",
 	       POW, lambda, Int->r0/I_KB->r0);
       }
     }
     Int->E_min=V0;
-    double kk=Compute_V2(Int, Int->r0, 0);
-    if(fabs(1-Int->sec_der/kk)>0.001){
-      printf("ERROR in Assign_int_SB n=%d r= %.2f ", n, Int->r0);
-      printf("k= %.4g (old) %.4g (new) /= %.3f  ", 
-	     Int->sec_der, kk, Int->sec_der/kk);
+    double kk=Int->force_aa*Compute_V2(Int, Int->r0, 0);
+    if(fabs(1-Int->for_cons/kk)>0.001){
+      printf("ERROR in Assign_int_SB n=%d r= %.2f r1= %.2f r2= %.2f r3= %.2f ",
+	     n, Int->r0, Int->r1, Int->r2, Int->r3);
+      printf("k= %.4g (for_cons) %.4g (Compute_V2) ratio= %.3f  ", 
+	     Int->for_cons, kk, Int->for_cons/kk);
       printf("V0= %.3g\n", Compute_V(Int, Int->r0));
       if(I_KB){
 	printf("Knowledge-based: NPAR=%d r0= %.3g r1=%.2g r2=%.2g r3=%.2g\n",
@@ -1192,7 +1194,7 @@ void Print_potential(FILE *file_out, struct interaction *Int,
 		     int a, int b, char *what, char *AA_code)
 {
   fprintf(file_out, "# %s potential %c-%c, r0= %.2f Vmin= %.3f V''= %.3f\n",
-	  what, AA_code[a], AA_code[b], Int->r0, Int->E_min, Int->sec_der);
+	  what, AA_code[a], AA_code[b], Int->r0, Int->E_min, Int->for_cons);
   fprintf(file_out, "# A4= %.3g A2= %.3g A1= %.3g A0= %.3g\n",
 	  Int->A4, Int->A2, Int->A1, Int->A0);
   fprintf(file_out, "# r1= %.2f r2= %.2f r3= %.2f\n", Int->r1, Int->r2, Int->r3);
@@ -1237,12 +1239,12 @@ void Assign_interactions_SB_old(struct interaction *Int_list, int N_int,
     // Check force constant
     if(POW){kk=kk0*pow(Int->r0,-EXPO);}
     else{kk=kk0*exp(-Int->r0*EXPO);}
-    if(fabs(kk-Int->sec_der)>EPS){
+    if(fabs(kk-Int->for_cons)>EPS){
       err++;
       if(err <= 10){
 	printf("ERROR in Assign_int n=%d r= %.2f ", n, Int->r0);
 	printf("k= %.4g (old) %.4g (new) /= %.3f\n", 
-	       Int->sec_der, kk, Int->sec_der/kk);
+	       Int->for_cons, kk, Int->for_cons/kk);
       }else{
 	printf(".");
       }
