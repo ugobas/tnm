@@ -7,11 +7,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "atom_types.h"
 #include "Var_dist.h"
 
 extern int INT_ATOM;
 extern float K_THR; // Where the force constant vanishes
 extern float K1_THR; // < K_THR, start of interpolatin region
+float VAR_DEF=1.00;
 float C0_CA=6.0; // distance for normalizing contact interactions (CA)
 float C0_MIN=3.5; //3.5; // distance for normalizing contact interactions (MIN)
 //int IJ_MIN=2; // Minimum distance for computing backbone atom contacts
@@ -843,8 +845,12 @@ void Type_dependent_force(struct interaction *Int_list, int N_int,
 	printf("ERROR, wrong interacting atoms %d %d, n=%d\n", i1,i2,natoms);
 	exit(8);
       }
-      t1=atoms[i1].type; t2=atoms[i2].type; 
-      var=Var_dist_atom[t1][t2];
+      t1=atoms[i1].type; t2=atoms[i2].type;
+      if(t1>=NATM || t2 >= NATM || t1<0 || t2<0){
+	var=VAR_DEF;
+      }else{
+	var=Var_dist_atom[t1][t2];
+      }
     }else if(INT_ATOM<0){
       int r1=Int->r1, r2=Int->r2;
       if(r1<0 || r2<0 || r1>=nres || r2>=nres){
