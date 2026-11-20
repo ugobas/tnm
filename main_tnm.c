@@ -1250,7 +1250,7 @@ int main(int argc , char *argv[]){
 
   // Collectivity
   if(COLL_THR > N_ref*COLL_FRAC_THR)COLL_THR = N_ref*COLL_FRAC_THR;
-  COLL_THR *=3;
+  //COLL_THR *=3;
 
   double E_ave=0; for(ia=0; ia<NM.N; ia++)E_ave+=NM.omega2[ia]; E_ave/=NM.N;
   printf("Average omega^2 prior to norm: %.2g\n", E_ave);
@@ -2343,6 +2343,16 @@ int getArgs(int argc, char **argv,
       if(a==NULL)continue;
       sscanf(a, "%f", C_THR);
       printf("Threshold distance= %.1f\n", *C_THR);
+    }else if (strncmp(argv[i],"-coll_thr",9)==0){
+      //i++; if(i>=argc)continue;
+      a=get_arg(&i, argv, argc);
+      if(a==NULL)continue;
+      sscanf(a, "%f", COLL_THR);
+      if(*COLL_THR<0){
+	printf("WARNING, unvalid COLL_THR: %.1f\n", *COLL_THR);
+	*COLL_THR=COLL_THR_DEF;
+    }
+      printf("Collectivity Threshold= %.1f\n", *COLL_THR);
     }else if (strncmp(argv[i],"-int_atom",7)==0){
       a=get_arg(&i, argv, argc);
       if(a==NULL)continue;
@@ -2783,6 +2793,7 @@ void help(void)
 	  "       -pdb2 <pdbfile2> for conformation change\n"
 	  "       -c2 <chain_id2>  all:read all chains, A, AB..\n"
           "Model specification:\n"
+	  "       -coll_thr <min.numb.atom in normal mode>\n"
 	  "       -int_atom <0,1,-1> ! Dependence of force constant 1=atom type -1=residue type 0=none\n" 
 	  "       -cont_type : MIN SCR SHA0 SHA1 SHA2 CA CB ALL HYD HB\n"
 	  "       -cont_thr Distance threshold default: %.1f\n"
